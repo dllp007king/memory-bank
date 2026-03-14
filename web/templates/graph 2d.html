@@ -1,0 +1,1225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识图谱 - Memory Bank</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Force Graph 2D -->
+    <script src="https://cdn.jsdelivr.net/npm/force-graph@1.43.4/dist/force-graph.min.js"></script>
+    <!-- D3.js -->
+    <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 50%, #f5f3ff 100%);
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden;
+            width: 100%;
+        }
+
+
+        .navbar {
+            background: linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%);
+            box-shadow: 0 4px 6px -1px rgba(30, 64, 175, 0.3);
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+        }
+
+
+        .card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        
+        .loading-spinner {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            border: 3px solid #e5e7eb;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+
+            100% { transform: rotate(360deg); }
+
+        }
+
+        
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+
+            to { opacity: 1; transform: translateY(0); }
+
+        }
+
+        
+        #graph-container {
+            width: 100%;
+            height: calc(100vh - 140px);
+            min-height: 500px;
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            border-radius: 16px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        #graph-container canvas {
+            width: 100% !important;
+            height: 100% !important;
+            position: relative;
+            z-index: 1;
+        }
+
+        #center-marker {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+
+        /* 悬浮图例 */
+        #floating-legend {
+            position: absolute;
+            top: 140px;
+            left: 20px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            z-index: 100;
+            max-height: calc(100vh - 200px);
+            overflow-y: auto;
+            transition: all 0.3s ease;
+        }
+
+
+        #floating-legend.collapsed .legend-content {
+            display: none;
+        }
+
+
+        #floating-legend.collapsed .legend-header {
+            border-bottom: none;
+        }
+
+
+        .legend-header {
+            padding: 12px;
+            border-bottom: 1px solid #e5e7eb;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+
+        .legend-header:hover {
+            background: #f8fafc;
+        }
+
+
+        .legend-title {
+            font-weight: 600;
+            color: #374151;
+            font-size: 14px;
+        }
+
+
+        .legend-toggle {
+            font-size: 12px;
+            color: #6b7280;
+            transition: transform 0.3s;
+        }
+
+
+        #floating-legend.collapsed .legend-toggle {
+            transform: rotate(-90deg);
+        }
+
+
+        .legend-content {
+            padding: 8px;
+        }
+
+        
+        /* 节点详情面板 */
+        #node-panel {
+            position: absolute;
+            top: 80px;
+            right: 20px;
+            width: 320px;
+            max-height: calc(100vh - 160px);
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+        }
+
+        
+        #node-panel.show {
+            display: block;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(20px); }
+
+            to { opacity: 1; transform: translateX(0); }
+
+        }
+
+        
+        /* 图例 */
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 8px;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+
+        .legend-item:hover {
+            background: #f1f5f9;
+        }
+
+
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+
+        .legend-scroll::-webkit-scrollbar {
+            width: 4px;
+        }
+
+
+        .legend-scroll::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 2px;
+        }
+
+
+        .legend-scroll::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 2px;
+        }
+
+        
+        /* 控制按钮 */
+        .control-btn {
+            background: white;
+            border: 1px solid #e5e7eb;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        
+        .control-btn:hover {
+            background: #f8fafc;
+            border-color: #3b82f6;
+        }
+
+        
+        /* 搜索框 */
+        #search-input {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 8px 12px;
+            width: 200px;
+            transition: all 0.2s;
+        }
+
+        
+        #search-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+        }
+
+        
+        /* 关系类型标签 */
+        .relation-tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
+            color: #0369a1;
+        }
+
+        
+        /* 滚动条美化 */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+
+        
+        ::-webkit-scrollbar-thumb {
+            background: #94a3b8;
+            border-radius: 3px;
+        }
+
+        
+        /* 工具提示 */
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            pointer-events: none;
+            z-index: 1000;
+            max-width: 250px;
+        }
+
+    </style>
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar text-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 py-3">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl">🕸️</span>
+                    <div>
+                        <h1 class="text-lg font-bold">知识图谱</h1>
+                        <p class="text-xs text-blue-200">实体关系可视化</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <a href="/" class="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg transition flex items-center gap-2 text-sm">
+                        <span>🧠</span>
+                        <span>返回主页</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="px-4 py-4" style="position: relative; width: 100%;">
+        <!-- 工具栏 -->
+        <div class="flex items-center justify-between mb-4 fade-in" style="position: fixed; top: 64px; left: 0; right: 0; z-index: 900; padding: 12px 20px; background: rgba(255,255,255,0.9); backdrop-filter: blur(10px);">
+            <div class="flex items-center gap-3">
+                <!-- 搜索 -->
+                <div class="flex items-center gap-2">
+                    <input type="text" id="search-input" placeholder="搜索实体..." onkeyup="handleSearch(event)">
+                    <button onclick="searchNode()" class="control-btn">
+                        🔍 搜索
+                    </button>
+                </div>
+
+                <!-- 控制按钮 -->
+                <button onclick="toggleParams()" class="control-btn" title="参数调节">
+                    ⚙️ 参数
+                </button>
+                <button onclick="resetView()" class="control-btn" title="重置视图">
+                    🔄 重置
+                </button>
+                <button onclick="toggleLabels()" class="control-btn" title="切换标签显示">
+                    🏷️ 标签
+                </button>
+            </div>
+
+            <!-- 参数控制面板 -->
+            <div id="params-panel" class="control-panel" style="display: none; position: absolute; top: 50px; left: 20px; background: white; padding: 16px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000; min-width: 240px; max-height: 80vh; overflow-y: auto;">
+                <h4 class="text-sm font-semibold mb-3 text-gray-700">物理引擎沙盒</h4>
+
+                <div class="param-group mb-3 pb-3 border-b border-gray-100">
+                    <label class="text-xs text-gray-600 font-bold block mb-1">连线距离 (弹簧原长): <span id="link-distance-val">150</span></label>
+                    <input type="range" id="link-distance" min="30" max="800" value="150" oninput="updateGraphParams()" style="width: 100%;">
+                </div>
+                <div class="param-group mb-3 pb-3 border-b border-gray-100">
+                    <label class="text-xs text-gray-600 font-bold block mb-1">节点斥力 (电荷排斥): <span id="charge-strength-val">1000</span></label>
+                    <input type="range" id="charge-strength" min="100" max="3000" step="50" value="1000" oninput="updateGraphParams()" style="width: 100%;">
+                </div>
+                <div class="param-group mb-3 pb-3 border-b border-gray-100">
+                    <label class="text-xs text-gray-600 font-bold block mb-1">节点大小 (视觉缩放): <span id="node-size-val">1.0</span></label>
+                    <input type="range" id="node-size" min="0.5" max="3.0" step="0.1" value="1.0" oninput="updateGraphParams()" style="width: 100%;">
+                </div>
+
+                <div class="param-group mb-3">
+                    <label class="text-xs text-blue-600 font-bold block mb-1">连线刚度 (弹簧硬度): <span id="link-strength-val">0.80</span></label>
+                    <input type="range" id="link-strength" min="0.05" max="2.0" step="0.05" value="0.8" oninput="updateGraphParams()" style="width: 100%;">
+                </div>
+                <div class="param-group mb-3">
+                    <label class="text-xs text-blue-600 font-bold block mb-1">防撞缓冲 (力场护盾): <span id="collision-buffer-val">20</span></label>
+                    <input type="range" id="collision-buffer" min="0" max="150" step="5" value="20" oninput="updateGraphParams()" style="width: 100%;">
+                </div>
+                <div class="param-group mb-1">
+                    <label class="text-xs text-blue-600 font-bold block mb-1">宇宙摩擦 (阻尼系数): <span id="velocity-decay-val">0.40</span></label>
+                    <input type="range" id="velocity-decay" min="0.05" max="0.95" step="0.05" value="0.4" oninput="updateGraphParams()" style="width: 100%;">
+                </div>
+                <div class="param-group mb-1 mt-3 pt-3 border-t border-purple-100">
+                    <label class="text-xs text-purple-600 font-bold block mb-1">黑洞引力 (向心力): <span id="center-gravity-val">0.05</span></label>
+                    <input type="range" id="center-gravity" min="0.00" max="1.00" step="0.01" value="0.05" oninput="updateGraphParams()" style="width: 100%;">
+                </div>
+            </div>
+
+            <!-- 统计信息 -->
+            <div class="flex items-center gap-4 text-sm text-gray-600">
+                <span id="node-count">节点: --</span>
+                <span id="link-count">关系: --</span>
+            </div>
+        </div>
+
+        <!-- 悬浮图例 -->
+        <div id="floating-legend" class="card">
+            <div class="legend-header" onclick="toggleLegend()">
+                <span class="legend-title">🏷️ 实体类型</span>
+                <span class="legend-toggle">▼</span>
+            </div>
+            <div class="legend-content">
+                <div id="legend" class="space-y-1 text-sm">
+                    <!-- 动态生成 -->
+                </div>
+            </div>
+        </div>
+
+        <!-- 图谱容器 -->
+        <div id="graph-container"></div>
+        
+        <!-- 节点详情面板 -->
+        <div id="node-panel" class="card p-4">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="font-semibold text-gray-800 flex items-center gap-2">
+                    <span id="panel-icon">📌</span>
+                    <span id="panel-title">实体详情</span>
+                </h3>
+                <button onclick="closePanel()" class="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+            <div id="panel-content">
+                <!-- 动态内容 -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- 加载提示 -->
+    <div id="loading" class="fixed inset-0 bg-white/80 flex items-center justify-center z-50">
+        <div class="text-center">
+            <div class="loading-spinner mx-auto mb-4"></div>
+            <p class="text-gray-600">加载图谱数据中...</p>
+        </div>
+    </div>
+    
+    <!-- 工具提示 -->
+    <div id="tooltip" class="tooltip" style="display: none;"></div>
+
+    <script>
+        // ==================== 全局变量 ====================
+        // 强制挂载到 window，绝对防止作用域丢失导致 graph 变成 null
+        window.graph = null; 
+        let graphData = { nodes: [], links: [] };
+        let showLabels = true;
+        let highlightedNode = null;
+        
+        // 默认图谱物理参数 (对应你截图里的 7 个滑块)
+        let graphParams = {
+            linkDistance: 150,
+            chargeStrength: -1000, 
+            nodeSizeScale: 1.0,
+            linkStrength: 0.8,
+            collisionBuffer: 20,
+            velocityDecay: 0.4,
+            centerGravity: 0.05
+        };
+        
+        // 实体类型配置
+        const entityTypes = {
+            'PERSON': { color: '#3b82f6', name: '人物', icon: '👤' },
+            'ORG': { color: '#22c55e', name: '组织', icon: '🏢' },
+            'LOCATION': { color: '#f59e0b', name: '地点', icon: '📍' },
+            'PLACE': { color: '#f59e0b', name: '地点', icon: '📍' },
+            'TOOL': { color: '#8b5cf6', name: '工具', icon: '🔧' },
+            'SYSTEM': { color: '#ec4899', name: '系统', icon: '⚙️' },
+            'PROJECT': { color: '#06b6d4', name: '项目', icon: '📁' },
+            'CONCEPT': { color: '#6366f1', name: '概念', icon: '💡' },
+            'EVENT': { color: '#ef4444', name: '事件', icon: '🎯' },
+            'TOPIC': { color: '#14b8a6', name: '主题', icon: '📝' },
+            'PRODUCT': { color: '#a855f7', name: '产品', icon: '📦' },
+        };
+        
+        const relationTypes = {
+            'KNOWS': '认识', 'WORKS_WITH': '共事', 'RELATED_TO': '相关',
+            'LOCATED_AT': '位于', 'PART_OF': '属于', 'MANAGES': '管理',
+            'CREATED': '创建', 'MENTIONS': '提及',
+        };
+        
+        // ==================== 核心逻辑 ====================
+
+        function calculateDegreeCentrality(nodes, links) {
+            const degreeMap = {};
+            nodes.forEach(node => degreeMap[node.id] = 0);
+            links.forEach(link => {
+                degreeMap[link.source.id || link.source]++;
+                degreeMap[link.target.id || link.target]++;
+            });
+            return degreeMap;
+        }
+
+        function calculateNodeSize(node, degreeMap) {
+            const degree = degreeMap[node.id] || 0;
+            const memoryCount = node.memoryCount || 0;
+            const baseSize = 6;
+            const degreeContribution = Math.min(4, Math.sqrt(degree) * 2);
+            const memoryContribution = Math.min(5, Math.sqrt(memoryCount) * 1.5);
+            return baseSize + degreeContribution + memoryContribution;
+        }
+
+        async function loadGraph() {
+            try {
+                // 模拟数据
+                const mockData = {
+                    nodes: [
+                        { id: '1', name: '张三', type: 'PERSON', color: '#3b82f6', memoryCount: 15, summary: '软件工程师', slug: 'zhangsan' },
+                        { id: '2', name: '李四', type: 'PERSON', color: '#3b82f6', memoryCount: 10, summary: '产品经理', slug: 'lisi' },
+                        { id: '3', name: '阿里巴巴', type: 'ORG', color: '#22c55e', memoryCount: 25, summary: '科技公司', slug: 'alibaba' },
+                        { id: '4', name: '腾讯', type: 'ORG', color: '#22c55e', memoryCount: 20, summary: '互联网公司', slug: 'tencent' },
+                        { id: '5', name: '北京', type: 'LOCATION', color: '#f59e0b', memoryCount: 30, summary: '中国首都', slug: 'beijing' },
+                        { id: '6', name: '上海', type: 'LOCATION', color: '#f59e0b', memoryCount: 28, summary: '中国经济中心', slug: 'shanghai' },
+                        { id: '7', name: 'JavaScript', type: 'TOOL', color: '#8b5cf6', memoryCount: 40, summary: '编程语言', slug: 'javascript' },
+                        { id: '8', name: 'React', type: 'TOOL', color: '#8b5cf6', memoryCount: 35, summary: '前端框架', slug: 'react' },
+                        { id: '9', name: '知识图谱', type: 'CONCEPT', color: '#6366f1', memoryCount: 22, summary: '语义网络', slug: 'knowledge-graph' },
+                        { id: '10', name: '人工智能', type: 'CONCEPT', color: '#6366f1', memoryCount: 45, summary: '计算机科学分支', slug: 'ai' }
+                    ],
+                    links: [
+                        { source: '1', target: '2', type: 'KNOWS', color: '#93c5fd', confidence: 0.9 },
+                        { source: '1', target: '3', type: 'WORKS_WITH', color: '#93c5fd', confidence: 0.8 },
+                        { source: '2', target: '4', type: 'WORKS_WITH', color: '#93c5fd', confidence: 0.7 },
+                        { source: '1', target: '5', type: 'LOCATED_AT', color: '#93c5fd', confidence: 0.95 },
+                        { source: '2', target: '6', type: 'LOCATED_AT', color: '#93c5fd', confidence: 0.9 },
+                        { source: '3', target: '5', type: 'LOCATED_AT', color: '#93c5fd', confidence: 0.85 },
+                        { source: '4', target: '6', type: 'LOCATED_AT', color: '#93c5fd', confidence: 0.8 },
+                        { source: '1', target: '7', type: 'RELATED_TO', color: '#93c5fd', confidence: 0.9 },
+                        { source: '1', target: '8', type: 'RELATED_TO', color: '#93c5fd', confidence: 0.85 },
+                        { source: '2', target: '9', type: 'RELATED_TO', color: '#93c5fd', confidence: 0.75 },
+                        { source: '9', target: '10', type: 'RELATED_TO', color: '#93c5fd', confidence: 0.9 },
+                        { source: '7', target: '8', type: 'RELATED_TO', color: '#93c5fd', confidence: 0.8 }
+                    ],
+                    stats: {
+                        total_nodes: 10,
+                        total_links: 12,
+                        type_counts: {
+                            'PERSON': 2,
+                            'ORG': 2,
+                            'LOCATION': 2,
+                            'TOOL': 2,
+                            'CONCEPT': 2
+                        }
+                    }
+                };
+                
+                graphData = mockData;
+                document.getElementById('node-count').textContent = `节点: ${graphData.stats.total_nodes}`;
+                document.getElementById('link-count').textContent = `关系: ${graphData.stats.total_links}`;
+                renderLegend(graphData.stats.type_counts);
+                graphData.degreeMap = calculateDegreeCentrality(graphData.nodes, graphData.links);
+                
+                // 核心修复：统计实体间的连线数量，防止多重关系弹簧累加压垮引擎
+                const pairCounts = {};
+                graphData.links.forEach(link => {
+                    const s = typeof link.source === 'object' ? link.source.id : link.source;
+                    const t = typeof link.target === 'object' ? link.target.id : link.target;
+                    const key = s < t ? `${s}-${t}` : `${t}-${s}`;
+                    pairCounts[key] = (pairCounts[key] || 0) + 1;
+                });
+                graphData.links.forEach(link => {
+                    const s = typeof link.source === 'object' ? link.source.id : link.source;
+                    const t = typeof link.target === 'object' ? link.target.id : link.target;
+                    const key = s < t ? `${s}-${t}` : `${t}-${s}`;
+                    link.pairCount = pairCounts[key] || 1;
+                });
+
+                // 添加黑洞节点（引力源）
+                const blackHoleNode = {
+                    id: 'blackhole',
+                    name: '黑洞',
+                    type: 'BLACKHOLE',
+                    color: '#8b5cf6',
+                    x: 0,
+                    y: 0,
+                    vx: 0,
+                    vy: 0,
+                    fx: 0,
+                    fy: 0,
+                    memoryCount: 0,
+                    summary: '引力源，可拖动改变位置'
+                };
+                
+                // 获取容器尺寸，将黑洞节点放在中心
+                const container = document.getElementById('graph-container');
+                if (container) {
+                    const rect = container.getBoundingClientRect();
+                    blackHoleNode.x = rect.width / 2;
+                    blackHoleNode.y = rect.height / 2;
+                }
+                
+                graphData.nodes.push(blackHoleNode);
+
+                initGraph();
+            } catch (e) {
+                showError('加载失败: ' + e.message);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        function renderLegend(typeCounts) {
+            const legend = document.getElementById('legend');
+            let html = '';
+            for (const [type, count] of Object.entries(typeCounts)) {
+                const config = entityTypes[type] || { color: '#94a3b8', name: type, icon: '📌' };
+                html += `
+                    <div class="legend-item cursor-pointer" onclick="filterByType('${type}')">
+                        <div class="legend-color" style="background: ${config.color}"></div>
+                        <span class="text-gray-700">${config.icon} ${config.name}</span>
+                        <span class="text-gray-400 text-xs ml-auto">${count}</span>
+                    </div>
+                `;
+            }
+            legend.innerHTML = html;
+        }
+
+        function toggleLegend() {
+            document.getElementById('floating-legend').classList.toggle('collapsed');
+        }
+
+        function updateBlackholeGravity() {
+            const blackholeNode = graphData.nodes.find(n => n.id === 'blackhole');
+            if (!blackholeNode) return;
+            
+            const blackholeForce = window.graph.d3Force('blackhole');
+            if (blackholeForce) {
+                blackholeForce.x(blackholeNode.x);
+                blackholeForce.y(blackholeNode.y);
+                window.graph.d3ReheatSimulation();
+            }
+        }
+
+        function initGraph() {
+            console.log('initGraph called');
+            
+            const container = document.getElementById('graph-container');
+            if (!container) {
+                console.error('Graph container not found');
+                return;
+            }
+            
+            const rect = container.getBoundingClientRect();
+            const width = rect.width || window.innerWidth;
+            const height = rect.height || window.innerHeight - 140;
+
+            console.log('Container dimensions:', { width, height });
+
+            if (window.graph) {
+                try {
+                    window.graph._destructor();
+                } catch (e) {
+                    console.warn('Error destroying previous graph:', e);
+                }
+            }
+
+            try {
+                // 重新赋值给 window.graph，确保全局可用
+                window.graph = ForceGraph()(container)
+                    .width(width)
+                    .height(height)
+                    .graphData(graphData)
+                    .nodeId('id')
+                    .nodeLabel(null)
+                    .nodeColor(node => node.color)
+                    .nodeCanvasObject((node, ctx, globalScale) => {
+                        const size = calculateNodeSize(node, graphData.degreeMap) * graphParams.nodeSizeScale;
+                        const fontSize = 12 / globalScale;
+                        
+                        // 黑洞节点特殊渲染
+                        if (node.id === 'blackhole') {
+                            const blackholeSize = size * 4;
+                            
+                            // 绘制吸积盘（外层光晕）
+                            const accretionGradient = ctx.createRadialGradient(node.x, node.y, blackholeSize * 0.8, node.x, node.y, blackholeSize * 2);
+                            accretionGradient.addColorStop(0, 'rgba(0, 0, 0, 1)');
+                            accretionGradient.addColorStop(0.3, 'rgba(255, 100, 50, 0.8)');
+                            accretionGradient.addColorStop(0.5, 'rgba(255, 200, 100, 0.6)');
+                            accretionGradient.addColorStop(0.7, 'rgba(200, 150, 255, 0.4)');
+                            accretionGradient.addColorStop(1, 'rgba(100, 50, 200, 0)');
+                            
+                            ctx.beginPath();
+                            ctx.arc(node.x, node.y, blackholeSize * 2, 0, 2 * Math.PI);
+                            ctx.fillStyle = accretionGradient;
+                            ctx.fill();
+                            
+                            // 绘制吸积盘环（椭圆效果）
+                            ctx.save();
+                            ctx.translate(node.x, node.y);
+                            ctx.scale(1, 0.3);
+                            ctx.beginPath();
+                            ctx.arc(0, 0, blackholeSize * 1.8, 0, 2 * Math.PI);
+                            ctx.strokeStyle = 'rgba(255, 150, 50, 0.6)';
+                            ctx.lineWidth = blackholeSize * 0.3 / globalScale;
+                            ctx.stroke();
+                            ctx.restore();
+                            
+                            // 绘制事件视界（黑洞本体）
+                            const eventHorizonGradient = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, blackholeSize);
+                            eventHorizonGradient.addColorStop(0, 'rgba(0, 0, 0, 1)');
+                            eventHorizonGradient.addColorStop(0.7, 'rgba(0, 0, 0, 1)');
+                            eventHorizonGradient.addColorStop(0.9, 'rgba(50, 0, 100, 0.8)');
+                            eventHorizonGradient.addColorStop(1, 'rgba(100, 50, 200, 0.6)');
+                            
+                            ctx.beginPath();
+                            ctx.arc(node.x, node.y, blackholeSize, 0, 2 * Math.PI);
+                            ctx.fillStyle = eventHorizonGradient;
+                            ctx.fill();
+                            
+                            // 绘制光子环（事件视界边缘的光环）
+                            ctx.beginPath();
+                            ctx.arc(node.x, node.y, blackholeSize * 0.95, 0, 2 * Math.PI);
+                            ctx.strokeStyle = 'rgba(255, 200, 150, 0.8)';
+                            ctx.lineWidth = 2 / globalScale;
+                            ctx.stroke();
+                            
+                            // 绘制引力透镜效果（光线弯曲）
+                            const lensGradient = ctx.createRadialGradient(node.x, node.y, blackholeSize, node.x, node.y, blackholeSize * 1.5);
+                            lensGradient.addColorStop(0, 'rgba(255, 200, 150, 0.3)');
+                            lensGradient.addColorStop(0.5, 'rgba(200, 150, 255, 0.2)');
+                            lensGradient.addColorStop(1, 'rgba(100, 50, 200, 0)');
+                            
+                            ctx.beginPath();
+                            ctx.arc(node.x, node.y, blackholeSize * 1.5, 0, 2 * Math.PI);
+                            ctx.fillStyle = lensGradient;
+                            ctx.fill();
+                            
+                            // 绘制标签
+                            if (showLabels && globalScale >= 0.5) {
+                                ctx.font = `bold ${fontSize}px Sans-Serif`;
+                                ctx.textAlign = 'center';
+                                ctx.textBaseline = 'middle';
+                                ctx.fillStyle = '#8b5cf6';
+                                ctx.fillText('黑洞', node.x, node.y + blackholeSize * 2.2 + fontSize);
+                            }
+                        } else {
+                            // 普通节点渲染
+                            ctx.beginPath();
+                            ctx.arc(node.x, node.y, size, 0, 2 * Math.PI);
+                            ctx.fillStyle = node === highlightedNode ? '#fbbf24' : node.color;
+                            ctx.fill();
+                            ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+                            ctx.lineWidth = 1.5 / globalScale;
+                            ctx.stroke();
+                            if (showLabels && globalScale >= 0.5) {
+                                ctx.font = `${fontSize}px Sans-Serif`;
+                                ctx.textAlign = 'center';
+                                ctx.textBaseline = 'middle';
+                                ctx.fillStyle = '#1e293b';
+                                ctx.fillText(node.name, node.x, node.y + size + fontSize);
+                            }
+                        }
+                    })
+                    .linkSource('source')
+                    .linkTarget('target')
+                    .linkLabel(null)
+                    .linkColor(link => link.color)
+                    .linkWidth(1.5)
+                    // 开启科幻数据流特效！
+                    .linkDirectionalParticles(2)
+                    .linkDirectionalParticleWidth(2)
+                    .linkDirectionalParticleSpeed(0.005)
+                    .linkDirectionalArrowLength(4)
+                    .linkDirectionalArrowRelPos(0.9)
+                    .linkCurvature(link => link.curvature || 0)
+                    .linkCanvasObjectMode(() => 'after')
+                    .linkCanvasObject((link, ctx, globalScale) => {
+                        if (showLabels && globalScale >= 0.8) {
+                            const start = link.source;
+                            const end = link.target;
+                            if (!Number.isFinite(start.x) || !Number.isFinite(end.y)) return;
+                            const midX = (start.x + end.x) / 2;
+                            const midY = (start.y + end.y) / 2;
+                            let labelX = midX;
+                            let labelY = midY;
+                            if (link.curvature) {
+                                const dx = end.x - start.x;
+                                const dy = end.y - start.y;
+                                const length = Math.sqrt(dx * dx + dy * dy);
+                                if (length > 0) {
+                                    const offset = link.curvature * 100 / globalScale;
+                                    labelX += (-dy / length) * offset;
+                                    labelY += (dx / length) * offset;
+                                }
+                            }
+                            const fontSize = 10 / globalScale;
+                            ctx.font = `${fontSize}px Sans-Serif`;
+                            ctx.textAlign = 'center';
+                            ctx.textBaseline = 'middle';
+                            const text = relationTypes[link.type] || link.type;
+                            const textWidth = ctx.measureText(text).width;
+                            ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+                            ctx.fillRect(labelX - textWidth / 2 - 2, labelY - fontSize / 2 - 1, textWidth + 4, fontSize + 2);
+                            ctx.fillStyle = '#64748b';
+                            ctx.fillText(text, labelX, labelY);
+                        }
+                    })
+                    .nodePointerAreaPaint((node, color, ctx) => {
+                        let size = calculateNodeSize(node, graphData.degreeMap) * graphParams.nodeSizeScale;
+                        // 黑洞节点的点击检测区域更大
+                        if (node.id === 'blackhole') {
+                            size = size * 4;
+                        }
+                        ctx.beginPath();
+                        ctx.arc(node.x, node.y, size * 1.5, 0, 2 * Math.PI);
+                        ctx.fillStyle = color;
+                        ctx.fill();
+                    })
+                    .onNodeClick(onNodeClick)
+                    // 图谱雕刻玩法：钉死节点与松开
+                    .onNodeDragEnd(node => { 
+                        node.fx = node.x; 
+                        node.fy = node.y;
+                        // 如果拖动的是黑洞节点，更新引力方向
+                        if (node.id === 'blackhole') {
+                            updateBlackholeGravity();
+                        }
+                    })
+                    .onNodeDrag(node => {
+                        // 如果拖动的是黑洞节点，实时更新引力方向
+                        if (node.id === 'blackhole') {
+                            updateBlackholeGravity();
+                        }
+                    })
+                    .onNodeRightClick(node => { node.fx = undefined; node.fy = undefined; window.graph.d3ReheatSimulation(); })
+                    .onNodeHover(onNodeHover)
+                    .onLinkHover(onLinkHover)
+                    .cooldownTicks(300)
+                    .d3AlphaDecay(0.01)
+                    .d3VelocityDecay(graphParams.velocityDecay); // 彻底结束链式调用分号！
+
+                console.log('Force Graph created successfully:', window.graph);
+
+                // 确保canvas在中心标记下方
+                setTimeout(() => {
+                    const canvas = container.querySelector('canvas');
+                    
+                    console.log('Canvas element:', canvas);
+                    
+                    if (canvas) {
+                        canvas.style.position = 'relative';
+                        canvas.style.zIndex = '1';
+                        console.log('Canvas z-index set to 1, computed:', getComputedStyle(canvas).zIndex);
+                    }
+                }, 100);
+
+                // 注入物理法则
+                if (window.graph) {
+                    console.log('Setting up physics forces with params:', graphParams);
+                    
+                    window.graph.d3Force('link')
+                        .distance(link => {
+                            const sSize = calculateNodeSize(link.source, graphData.degreeMap) * graphParams.nodeSizeScale;
+                            const tSize = calculateNodeSize(link.target, graphData.degreeMap) * graphParams.nodeSizeScale;
+                            return sSize + tSize + graphParams.linkDistance;
+                        })
+                        .strength(link => {
+                            // 智能卸力：如果两个节点间有 5 条线，那么每条线的硬度除以 5，防止物理坍缩！
+                            return graphParams.linkStrength / link.pairCount;
+                        });
+
+                    window.graph.d3Force('charge').strength(graphParams.chargeStrength);
+                    
+                    window.graph.d3Force('collide', d3.forceCollide().radius(node => {
+                        return calculateNodeSize(node, graphData.degreeMap) * graphParams.nodeSizeScale + graphParams.collisionBuffer;
+                    }).iterations(3));
+
+                    // 移除默认的center力，只使用blackhole力
+                    window.graph.d3Force('center', null);
+                    
+                    // 黑洞引力：将所有节点（除了黑洞本身）拉向黑洞节点
+                    window.graph.d3Force('blackhole', d3.forceRadial(0, 0, 0).strength(graphParams.centerGravity));
+                    
+                    // 初始化黑洞引力方向
+                    const blackholeNode = graphData.nodes.find(n => n.id === 'blackhole');
+                    if (blackholeNode) {
+                        const blackholeForce = window.graph.d3Force('blackhole');
+                        if (blackholeForce) {
+                            blackholeForce.x(blackholeNode.x);
+                            blackholeForce.y(blackholeNode.y);
+                        }
+                    }
+                    
+                    console.log('Physics forces setup completed');
+                }
+
+                setTimeout(() => {
+                    if (window.graph && graphData.nodes.length > 0) window.graph.zoomToFit(400, 50);
+                }, 300);
+                
+                console.log('Graph initialized successfully');
+            } catch (error) {
+                console.error('Error initializing graph:', error);
+                showError('图谱初始化失败: ' + error.message);
+            }
+        }
+
+        // ==================== 交互事件 ====================
+
+        function onNodeClick(node) {
+            if (!node) return;
+            highlightedNode = node;
+            
+            const panel = document.getElementById('node-panel');
+            const typeConfig = entityTypes[node.type] || { name: node.type, icon: '📌' };
+            document.getElementById('panel-icon').textContent = typeConfig.icon;
+            document.getElementById('panel-title').textContent = node.name;
+            
+            const relatedLinks = graphData.links.filter(l => {
+                const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
+                const targetId = typeof l.target === 'object' ? l.target.id : l.target;
+                return sourceId === node.id || targetId === node.id;
+            });
+            
+            let html = `<div class="space-y-3"><div class="flex items-center gap-2">
+                        <span class="px-2 py-1 rounded text-xs" style="background: ${node.color}20; color: ${node.color}">${typeConfig.name}</span>
+                        <span class="text-xs text-gray-400">关联记忆: ${node.memoryCount}</span></div>
+                        ${node.summary ? `<p class="text-sm text-gray-600">${node.summary}</p>` : ''}`;
+            
+            if (relatedLinks.length > 0) {
+                html += `<div class="mt-3 pt-3 border-t border-gray-100"><h4 class="text-xs font-semibold text-gray-500 mb-2">相关关系 (${relatedLinks.length})</h4><div class="space-y-2">`;
+                for (const link of relatedLinks.slice(0, 10)) {
+                    const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+                    const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+                    const isSource = sourceId === node.id;
+                    const otherNodeId = isSource ? targetId : sourceId;
+                    const otherNode = graphData.nodes.find(n => String(n.id) === String(otherNodeId));
+                    const relName = relationTypes[link.type] || link.type;
+                    if (otherNode) {
+                        html += `<div class="flex items-center gap-2 text-sm"><span class="text-gray-400">${isSource ? '→' : '←'}</span>
+                                 <span class="relation-tag">${relName}</span>
+                                 <span class="text-gray-700 cursor-pointer hover:text-blue-600" onclick="focusNode('${otherNode.id}')">${otherNode.name}</span></div>`;
+                    }
+                }
+                if (relatedLinks.length > 10) html += `<p class="text-xs text-gray-400">...还有 ${relatedLinks.length - 10} 个关系</p>`;
+                html += `</div></div>`;
+            }
+            html += `</div>`;
+            document.getElementById('panel-content').innerHTML = html;
+            panel.classList.add('show');
+            
+            // 安全调用镜头动画
+            if (window.graph) {
+                window.graph.zoom(1.2, 1000);
+                setTimeout(() => window.graph.centerAt(node.x + 150, node.y, 1000), 50);
+            }
+        }
+
+        function onNodeHover(node) {
+            const tooltip = document.getElementById('tooltip');
+            if (node) {
+                const typeConfig = entityTypes[node.type] || { name: node.type };
+                tooltip.innerHTML = `<strong>${node.name}</strong><br>类型: ${typeConfig.name}<br>关联记忆: ${node.memoryCount}`;
+                tooltip.style.display = 'block';
+                document.body.style.cursor = 'pointer';
+            } else {
+                tooltip.style.display = 'none';
+                document.body.style.cursor = 'default';
+            }
+        }
+
+        function onLinkHover(link) {
+            const tooltip = document.getElementById('tooltip');
+            if (link) {
+                const relName = relationTypes[link.type] || link.type;
+                tooltip.innerHTML = `<strong>${link.source.name}</strong> <span style="color: #93c5fd;">→ ${relName} →</span> <strong>${link.target.name}</strong><br>置信度: ${(link.confidence * 100).toFixed(0)}%`;
+                tooltip.style.display = 'block';
+            } else {
+                tooltip.style.display = 'none';
+            }
+        }
+
+        document.addEventListener('mousemove', (e) => {
+            const tooltip = document.getElementById('tooltip');
+            if (tooltip.style.display !== 'none') {
+                tooltip.style.left = (e.clientX + 15) + 'px';
+                tooltip.style.top = (e.clientY + 15) + 'px';
+            }
+        });
+
+        function closePanel() {
+            document.getElementById('node-panel').classList.remove('show');
+            highlightedNode = null;
+        }
+
+        function handleSearch(event) { if (event.key === 'Enter') searchNode(); }
+
+        async function searchNode() {
+            const query = document.getElementById('search-input').value.trim();
+            if (!query) return;
+
+            try {
+                const response = await fetch(`/api/entities/search?q=${encodeURIComponent(query)}&limit=10`);
+                const result = await response.json();
+
+                if (!result.success || result.data.results.length === 0) {
+                    alert('未找到匹配的实体');
+                    return;
+                }
+
+                const matches = result.data.results;
+
+                if (matches.length === 1) {
+                    // 只有一个结果，直接选中
+                    const node = graphData.nodes.find(n => n.slug === matches[0].slug);
+                    if (node) onNodeClick(node);
+                    else alert('该实体不在当前视图中');
+                } else {
+                    // 多个结果，显示选择对话框
+                    showEntitySelectionDialog(matches);
+                }
+            } catch (error) {
+                console.error('搜索失败:', error);
+                alert('搜索失败: ' + error.message);
+            }
+        }
+
+        function showEntitySelectionDialog(entities) {
+            // 创建选择对话框
+            const dialog = document.createElement('div');
+            dialog.id = 'entity-selection-dialog';
+            dialog.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: white;
+                border-radius: 12px;
+                box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+                padding: 20px;
+                z-index: 10000;
+                max-width: 500px;
+                width: 90%;
+                max-height: 70vh;
+                overflow-y: auto;
+            `;
+
+            dialog.innerHTML = `
+                <h3 style="margin: 0 0 15px 0; color: #1e3a5f;">找到多个匹配的实体</h3>
+                <p style="margin: 0 0 15px 0; color: #64748b;">请选择要查看的实体：</p>
+                <div id="entity-list" style="display: flex; flex-direction: column; gap: 10px;"></div>
+                <div style="margin-top: 15px; text-align: right;">
+                    <button onclick="document.getElementById('entity-selection-dialog').remove(); document.getElementById('overlay').remove();"
+                            style="padding: 8px 16px; background: #94a3b8; color: white; border: none; border-radius: 6px; cursor: pointer;">
+                        取消
+                    </button>
+                </div>
+            `;
+
+            const entityList = dialog.querySelector('#entity-list');
+
+            entities.forEach((entity, index) => {
+                const item = document.createElement('div');
+                item.style.cssText = `
+                    padding: 12px;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                `;
+                item.onmouseover = () => item.style.background = '#f1f5f9';
+                item.onmouseout = () => item.style.background = 'white';
+
+                item.innerHTML = `
+                    <div style="font-weight: 600; color: #1e3a5f;">${entity.name}</div>
+                    <div style="font-size: 12px; color: #64748b; margin-top: 4px;">
+                        <span style="background: #3b82f6; color: white; padding: 2px 8px; border-radius: 4px;">${entity.type}</span>
+                        <span style="margin-left: 8px;">${entity.memory_count} 条记忆</span>
+                    </div>
+                    ${entity.summary ? `<div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">${entity.summary.substring(0, 50)}...</div>` : ''}
+                `;
+
+                item.onclick = () => {
+                    const node = graphData.nodes.find(n => n.slug === entity.slug);
+                    if (node) {
+                        onNodeClick(node);
+                        dialog.remove();
+                        const overlay = document.getElementById('overlay');
+                        if (overlay) overlay.remove();
+                    } else {
+                        alert('该实体不在当前视图中');
+                    }
+                };
+
+                entityList.appendChild(item);
+            });
+
+            // 添加背景遮罩
+            const overlay = document.createElement('div');
+            overlay.id = 'overlay';
+            overlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0,0,0,0.5);
+                z-index: 9999;
+            `;
+            overlay.onclick = () => {
+                dialog.remove();
+                overlay.remove();
+            };
+
+            document.body.appendChild(overlay);
+            document.body.appendChild(dialog);
+        }
+
+        function focusNode(nodeId) {
+            const node = graphData.nodes.find(n => String(n.id) === String(nodeId));
+            if (node) onNodeClick(node);
+        }
+
+        function filterByType(type) {
+            if (!window.graph) return;
+            window.graph.nodeColor(node => node.type === type ? node.color : 'rgba(148, 163, 184, 0.3)')
+                .linkColor(link => {
+                    const s = link.source.type || graphData.nodes.find(n=>n.id===link.source).type;
+                    const t = link.target.type || graphData.nodes.find(n=>n.id===link.target).type;
+                    return (s === type || t === type) ? 'rgba(59, 130, 246, 0.6)' : 'rgba(148, 163, 184, 0.1)';
+                });
+        }
+
+        function resetView() {
+            highlightedNode = null;
+            closePanel();
+            document.getElementById('search-input').value = '';
+            document.getElementById('loading').style.display = 'flex';
+            loadGraph();
+        }
+
+        function toggleLabels() {
+            showLabels = !showLabels;
+            if (window.graph) window.graph.nodeColor(node => node.color);
+        }
+
+        function toggleParams() {
+            const panel = document.getElementById('params-panel');
+            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        }
+
+        // ==================== 全能沙盒参数更新 ====================
+
+        function updateGraphParams() {
+            console.log('updateGraphParams called');
+            
+            if (!window.graph) {
+                console.error('window.graph is null or undefined');
+                return; // 绝对防护：防止控制台报错
+            }
+
+            const linkDistance = parseInt(document.getElementById('link-distance').value);
+            const chargeStrength = -parseInt(document.getElementById('charge-strength').value);
+            const nodeSizeScale = parseFloat(document.getElementById('node-size').value);
+            const linkStrength = parseFloat(document.getElementById('link-strength').value);
+            const collisionBuffer = parseInt(document.getElementById('collision-buffer').value);
+            const velocityDecay = parseFloat(document.getElementById('velocity-decay').value);
+            const centerGravity = parseFloat(document.getElementById('center-gravity').value);
+
+            console.log('Parameters:', { linkDistance, chargeStrength, nodeSizeScale, linkStrength, collisionBuffer, velocityDecay, centerGravity });
+
+            document.getElementById('link-distance-val').textContent = linkDistance;
+            document.getElementById('charge-strength-val').textContent = Math.abs(chargeStrength);
+            document.getElementById('node-size-val').textContent = nodeSizeScale.toFixed(1);
+            document.getElementById('link-strength-val').textContent = linkStrength.toFixed(2);
+            document.getElementById('collision-buffer-val').textContent = collisionBuffer;
+            document.getElementById('velocity-decay-val').textContent = velocityDecay.toFixed(2);
+            document.getElementById('center-gravity-val').textContent = centerGravity.toFixed(2);
+
+            graphParams = { linkDistance, chargeStrength, nodeSizeScale, linkStrength, collisionBuffer, velocityDecay, centerGravity };
+
+            const linkForce = window.graph.d3Force('link');
+            console.log('linkForce:', linkForce);
+            if (linkForce) {
+                linkForce.distance(link => {
+                    const sSize = calculateNodeSize(link.source, graphData.degreeMap) * nodeSizeScale;
+                    const tSize = calculateNodeSize(link.target, graphData.degreeMap) * nodeSizeScale;
+                    return sSize + tSize + linkDistance;
+                }).strength(link => linkStrength / link.pairCount); // 智能卸载多重弹簧！
+            }
+
+            const chargeForce = window.graph.d3Force('charge');
+            console.log('chargeForce:', chargeForce);
+            if (chargeForce) chargeForce.strength(chargeStrength);
+
+            const collisionForce = window.graph.d3Force('collide');
+            console.log('collisionForce:', collisionForce);
+            if (collisionForce) {
+                collisionForce.radius(node => calculateNodeSize(node, graphData.degreeMap) * nodeSizeScale + collisionBuffer);
+            }
+
+            window.graph.d3VelocityDecay(velocityDecay);
+            
+            // 确保移除center力，只使用blackhole力
+            window.graph.d3Force('center', null);
+            
+            // 更新blackhole力，指向黑洞节点位置
+            const blackholeNode = graphData.nodes.find(n => n.id === 'blackhole');
+            if (blackholeNode) {
+                const blackholeForce = window.graph.d3Force('blackhole');
+                if (blackholeForce) {
+                    blackholeForce.strength(centerGravity);
+                    blackholeForce.x(blackholeNode.x);
+                    blackholeForce.y(blackholeNode.y);
+                } else {
+                    window.graph.d3Force('blackhole', d3.forceRadial(0, blackholeNode.x, blackholeNode.y).strength(centerGravity));
+                }
+            }
+            
+            window.graph.d3ReheatSimulation();
+            
+            console.log('Graph parameters updated successfully');
+        }
+
+        function showError(message) {
+            document.getElementById('loading').innerHTML = `
+                <div class="text-center"><span class="text-4xl mb-4">❌</span><p class="text-red-600">${message}</p>
+                <button onclick="location.reload()" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg">重试</button></div>`;
+        }
+
+        
+    document.addEventListener('DOMContentLoaded', loadGraph);
+</script>
+</body>
+</html>

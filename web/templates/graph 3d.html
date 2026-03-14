@@ -1,0 +1,2443 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识图谱 - Memory Bank</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Force Graph 3D -->
+    <script src="https://cdn.jsdelivr.net/npm/3d-force-graph@1.70.8/dist/3d-force-graph.min.js"></script>
+    <!-- Three.js -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/build/three.min.js"></script>
+    <!-- D3.js -->
+    <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+    <style>
+        body {
+            background: radial-gradient(ellipse at center, #0a0a2e 0%, #050515 30%, #02020a 60%, #000003 100%);
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden;
+            width: 100%;
+        }
+
+
+        .navbar {
+            background: linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%);
+            box-shadow: 0 4px 6px -1px rgba(30, 64, 175, 0.3);
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+        }
+
+
+        .card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        
+        .loading-spinner {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            border: 3px solid #e5e7eb;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+
+            100% { transform: rotate(360deg); }
+
+        }
+
+        
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+
+            to { opacity: 1; transform: translateY(0); }
+
+        }
+
+        
+        #graph-container {
+            width: 100%;
+            height: calc(100vh - 140px);
+            min-height: 500px;
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            border-radius: 16px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        #graph-container canvas {
+            width: 100% !important;
+            height: 100% !important;
+            position: relative;
+            z-index: 1;
+        }
+
+        #center-marker {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+
+        /* 悬浮图例 */
+        #floating-legend {
+            position: absolute;
+            top: 140px;
+            left: 20px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            z-index: 100;
+            max-height: calc(100vh - 200px);
+            overflow-y: auto;
+            transition: all 0.3s ease;
+        }
+
+
+        #floating-legend.collapsed .legend-content {
+            display: none;
+        }
+
+
+        #floating-legend.collapsed .legend-header {
+            border-bottom: none;
+        }
+
+
+        .legend-header {
+            padding: 12px;
+            border-bottom: 1px solid #e5e7eb;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+
+        .legend-header:hover {
+            background: #f8fafc;
+        }
+
+
+        .legend-title {
+            font-weight: 600;
+            color: #374151;
+            font-size: 14px;
+        }
+
+
+        .legend-toggle {
+            font-size: 12px;
+            color: #6b7280;
+            transition: transform 0.3s;
+        }
+
+
+        #floating-legend.collapsed .legend-toggle {
+            transform: rotate(-90deg);
+        }
+
+
+        .legend-content {
+            padding: 8px;
+        }
+
+        
+        /* 节点详情面板 */
+        #node-panel {
+            position: absolute;
+            top: 80px;
+            right: 20px;
+            width: 320px;
+            max-height: calc(100vh - 160px);
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+        }
+
+        
+        #node-panel.show {
+            display: block;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(20px); }
+
+            to { opacity: 1; transform: translateX(0); }
+
+        }
+
+        
+        /* 图例 */
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 8px;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+
+        .legend-item:hover {
+            background: #f1f5f9;
+        }
+
+
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+
+        .legend-scroll::-webkit-scrollbar {
+            width: 4px;
+        }
+
+
+        .legend-scroll::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 2px;
+        }
+
+
+        .legend-scroll::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 2px;
+        }
+
+        
+        /* 控制按钮 */
+        .control-btn {
+            background: white;
+            border: 1px solid #e5e7eb;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        
+        .control-btn:hover {
+            background: #f8fafc;
+            border-color: #3b82f6;
+        }
+
+        
+        /* 搜索框 */
+        #search-input {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 8px 12px;
+            width: 200px;
+            transition: all 0.2s;
+        }
+
+        
+        #search-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+        }
+
+        
+        /* 关系类型标签 */
+        .relation-tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
+            color: #0369a1;
+        }
+
+        
+        /* 滚动条美化 */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+
+        
+        ::-webkit-scrollbar-thumb {
+            background: #94a3b8;
+            border-radius: 3px;
+        }
+
+        
+        /* 工具提示 */
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            pointer-events: none;
+            z-index: 1000;
+            max-width: 250px;
+        }
+
+    </style>
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar text-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 py-3">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl">🕸️</span>
+                    <div>
+                        <h1 class="text-lg font-bold">知识图谱</h1>
+                        <p class="text-xs text-blue-200">实体关系可视化</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <a href="/" class="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg transition flex items-center gap-2 text-sm">
+                        <span>🧠</span>
+                        <span>返回主页</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="px-4 py-4" style="position: relative; width: 100%;">
+        <!-- 工具栏 -->
+        <div class="flex items-center justify-between mb-4 fade-in" style="position: fixed; top: 64px; left: 0; right: 0; z-index: 900; padding: 12px 20px; background: rgba(255,255,255,0.9); backdrop-filter: blur(10px);">
+            <div class="flex items-center gap-3">
+                <!-- 搜索 -->
+                <div class="flex items-center gap-2">
+                    <input type="text" id="search-input" placeholder="搜索实体..." onkeyup="handleSearch(event)">
+                    <button onclick="searchNode()" class="control-btn">
+                        🔍 搜索
+                    </button>
+                </div>
+
+                <!-- 控制按钮 -->
+                <button onclick="toggleParams()" class="control-btn" title="参数调节">
+                    ⚙️ 参数
+                </button>
+                <button onclick="resetView()" class="control-btn" title="重置视图">
+                    🔄 重置
+                </button>
+                <button onclick="toggleLinks()" class="control-btn" title="切换链接显示">
+                    🔗 链接
+                </button>
+            </div>
+
+            <!-- 参数控制面板 -->
+            <div id="params-panel" class="control-panel" style="display: none; position: absolute; top: 50px; left: 20px; background: white; padding: 16px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000; min-width: 240px; max-height: 80vh; overflow-y: auto;">
+                <h4 class="text-sm font-semibold mb-3 text-gray-700">物理引擎沙盒</h4>
+
+                <div class="param-group mb-3 pb-3 border-b border-gray-100">
+                    <label class="text-xs text-gray-600 font-bold block mb-1">连线距离 (弹簧原长): <span id="link-distance-val">150</span></label>
+                    <input type="range" id="link-distance" min="30" max="800" value="150" oninput="updateGraphParams()" style="width: 100%;">
+                </div>
+                <div class="param-group mb-3 pb-3 border-b border-gray-100">
+                    <label class="text-xs text-gray-600 font-bold block mb-1">节点斥力 (电荷排斥): <span id="charge-strength-val">1000</span></label>
+                    <input type="range" id="charge-strength" min="100" max="3000" step="50" value="1000" oninput="updateGraphParams()" style="width: 100%;">
+                </div>
+                <div class="param-group mb-3 pb-3 border-b border-gray-100">
+                    <label class="text-xs text-gray-600 font-bold block mb-1">节点大小 (视觉缩放): <span id="node-size-val">1.0</span></label>
+                    <input type="range" id="node-size" min="0.5" max="3.0" step="0.1" value="1.0" oninput="updateGraphParams()" style="width: 100%;">
+                </div>
+
+                <div class="param-group mb-3">
+                    <label class="text-xs text-blue-600 font-bold block mb-1">连线刚度 (弹簧硬度): <span id="link-strength-val">0.80</span></label>
+                    <input type="range" id="link-strength" min="0.05" max="2.0" step="0.05" value="0.8" oninput="updateGraphParams()" style="width: 100%;">
+                </div>
+                <div class="param-group mb-3">
+                    <label class="text-xs text-blue-600 font-bold block mb-1">防撞缓冲 (力场护盾): <span id="collision-buffer-val">20</span></label>
+                    <input type="range" id="collision-buffer" min="0" max="150" step="5" value="20" oninput="updateGraphParams()" style="width: 100%;">
+                </div>
+                <div class="param-group mb-1">
+                    <label class="text-xs text-blue-600 font-bold block mb-1">宇宙摩擦 (阻尼系数): <span id="velocity-decay-val">0.40</span></label>
+                    <input type="range" id="velocity-decay" min="0.05" max="0.95" step="0.05" value="0.4" oninput="updateGraphParams()" style="width: 100%;">
+                </div>
+                <div class="param-group mb-1 mt-3 pt-3 border-t border-purple-100">
+                    <label class="text-xs text-purple-600 font-bold block mb-1">黑洞引力 (向心力): <span id="center-gravity-val">0.05</span></label>
+                    <input type="range" id="center-gravity" min="0.00" max="1.00" step="0.01" value="0.05" oninput="updateGraphParams()" style="width: 100%;">
+                </div>
+                <div class="param-group mb-1 mt-3 pt-3 border-t border-green-100">
+                    <label class="text-xs text-green-600 font-bold block mb-1">标签显示距离: <span id="label-distance-val">2000</span></label>
+                    <input type="range" id="label-distance" min="500" max="3000" step="100" value="2000" oninput="updateGraphParams()" style="width: 100%;">
+                </div>
+            </div>
+
+            <!-- 统计信息 -->
+            <div class="flex items-center gap-4 text-sm text-gray-600">
+                <span id="node-count">节点: --</span>
+                <span id="link-count">关系: --</span>
+            </div>
+        </div>
+
+        <!-- 悬浮图例 -->
+        <div id="floating-legend" class="card">
+            <div class="legend-header" onclick="toggleLegend()">
+                <span class="legend-title">🏷️ 实体类型</span>
+                <span class="legend-toggle">▼</span>
+            </div>
+            <div class="legend-content">
+                <div id="legend" class="space-y-1 text-sm">
+                    <!-- 动态生成 -->
+                </div>
+            </div>
+        </div>
+
+        <!-- 图谱容器 -->
+        <div id="graph-container"></div>
+        
+        <!-- 节点详情面板 -->
+        <div id="node-panel" class="card p-4">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="font-semibold text-gray-800 flex items-center gap-2">
+                    <span id="panel-icon">📌</span>
+                    <span id="panel-title">实体详情</span>
+                </h3>
+                <button onclick="closePanel()" class="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+            <div id="panel-content">
+                <!-- 动态内容 -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- 加载提示 -->
+    <div id="loading" class="fixed inset-0 bg-white/80 flex items-center justify-center z-50">
+        <div class="text-center">
+            <div class="loading-spinner mx-auto mb-4"></div>
+            <p class="text-gray-600">加载图谱数据中...</p>
+        </div>
+    </div>
+    
+    <!-- 工具提示 -->
+    <div id="tooltip" class="tooltip" style="display: none;"></div>
+
+    <script>
+        // ==================== 全局变量 ====================
+        // 强制挂载到 window，绝对防止作用域丢失导致 graph 变成 null
+        window.graph = null; 
+        let graphData = { nodes: [], links: [] };
+        let showLabels = true;
+        let highlightedNode = null;
+        
+        // 默认图谱物理参数 (对应你截图里的 7 个滑块)
+        let graphParams = {
+            linkDistance: 150,
+            chargeStrength: -1000, 
+            nodeSizeScale: 1.0,
+            linkStrength: 0.8,
+            collisionBuffer: 20,
+            velocityDecay: 0.4,
+            centerGravity: 0.05,
+            labelDistance: 2000
+        };
+        
+        // 实体类型配置
+        const entityTypes = {
+            'PERSON': { color: '#3b82f6', name: '人物', icon: '👤' },
+            'ORG': { color: '#22c55e', name: '组织', icon: '🏢' },
+            'LOCATION': { color: '#f59e0b', name: '地点', icon: '📍' },
+            'PLACE': { color: '#f59e0b', name: '地点', icon: '📍' },
+            'TOOL': { color: '#8b5cf6', name: '工具', icon: '🔧' },
+            'SYSTEM': { color: '#ec4899', name: '系统', icon: '⚙️' },
+            'PROJECT': { color: '#06b6d4', name: '项目', icon: '📁' },
+            'CONCEPT': { color: '#6366f1', name: '概念', icon: '💡' },
+            'EVENT': { color: '#ef4444', name: '事件', icon: '🎯' },
+            'TOPIC': { color: '#14b8a6', name: '主题', icon: '📝' },
+            'PRODUCT': { color: '#a855f7', name: '产品', icon: '📦' },
+        };
+        
+        const relationTypes = {
+            'KNOWS': '认识', 'WORKS_WITH': '共事', 'RELATED_TO': '相关',
+            'LOCATED_AT': '位于', 'PART_OF': '属于', 'MANAGES': '管理',
+            'CREATED': '创建', 'MENTIONS': '提及', 'USES': '使用',
+            'PARTICIPATES_IN': '参与', 'HOSTS': '主办',
+        };
+        
+        // ==================== 核心逻辑 ====================
+
+        function calculateDegreeCentrality(nodes, links) {
+            const degreeMap = {};
+            nodes.forEach(node => degreeMap[node.id] = 0);
+            links.forEach(link => {
+                degreeMap[link.source.id || link.source]++;
+                degreeMap[link.target.id || link.target]++;
+            });
+            return degreeMap;
+        }
+
+        function calculateNodeSize(node, degreeMap) {
+            const degree = degreeMap[node.id] || 0;
+            const memoryCount = node.memoryCount || 0;
+            const baseSize = 15;
+            const degreeContribution = Math.min(26, Math.sqrt(degree) * 6.5);
+            const memoryContribution = Math.min(10, Math.sqrt(memoryCount) * 2);
+            return baseSize + degreeContribution + memoryContribution;
+        }
+
+        function createSimpleLabel(text, options = {}) {
+            const {
+                fontSize = 32,
+                fontFace = 'Segoe UI, Microsoft YaHei, Arial',
+                textColor = '#ffffff',
+                outlineColor = '#000000'
+            } = options;
+            
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            
+            context.font = `bold ${fontSize}px ${fontFace}`;
+            const metrics = context.measureText(text);
+            const textWidth = metrics.width;
+            
+            canvas.width = Math.ceil(textWidth + 20);
+            canvas.height = Math.ceil(fontSize + 16);
+            
+            context.font = `bold ${fontSize}px ${fontFace}`;
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            
+            const x = canvas.width / 2;
+            const y = canvas.height / 2;
+            
+            context.fillStyle = outlineColor;
+            for (let ox = -2; ox <= 2; ox++) {
+                for (let oy = -2; oy <= 2; oy++) {
+                    context.fillText(text, x + ox, y + oy);
+                }
+            }
+            
+            context.fillStyle = textColor;
+            context.fillText(text, x, y);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.needsUpdate = true;
+            
+            const spriteMaterial = new THREE.SpriteMaterial({
+                map: texture,
+                transparent: true,
+                depthTest: true,
+                depthWrite: false,
+                opacity: 1
+            });
+            
+            const sprite = new THREE.Sprite(spriteMaterial);
+            const aspectRatio = canvas.width / canvas.height;
+            sprite.scale.set(aspectRatio * 25, 25, 1);
+            sprite.userData.baseScaleX = aspectRatio * 25;
+            sprite.userData.baseScaleY = 25;
+            
+            return sprite;
+        }
+
+        function createNodeLabel(text, options = {}) {
+            const { sphereRadius = 30 } = options;
+            
+            const group = new THREE.Group();
+            
+            const sprite = createSimpleLabel(text, options);
+            sprite.userData.isLabel = true;
+            group.add(sprite);
+            
+            group.userData.isLabel = true;
+            group.userData.labelSprite = sprite;
+            group.userData.sphereRadius = sphereRadius;
+            
+            return group;
+        }
+
+        function createTextSprite(text, options = {}) {
+            const {
+                fontSize = 48,
+                fontFace = 'Segoe UI, Microsoft YaHei, Arial',
+                textColor = '#ffffff',
+                backgroundColor = 'rgba(0,0,0,0)',
+                outlineColor = '#000000',
+                outlineWidth = 2,
+                padding = 10
+            } = options;
+            
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            
+            context.font = `bold ${fontSize}px ${fontFace}`;
+            const metrics = context.measureText(text);
+            const textWidth = metrics.width;
+            const textHeight = fontSize;
+            
+            canvas.width = textWidth + padding * 2 + 20;
+            canvas.height = textHeight + padding * 2 + 10;
+            
+            context.font = `bold ${fontSize}px ${fontFace}`;
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            
+            const x = canvas.width / 2;
+            const y = canvas.height / 2;
+            
+            context.fillStyle = outlineColor;
+            for (let ox = -outlineWidth; ox <= outlineWidth; ox++) {
+                for (let oy = -outlineWidth; oy <= outlineWidth; oy++) {
+                    context.fillText(text, x + ox, y + oy);
+                }
+            }
+            
+            context.fillStyle = textColor;
+            context.fillText(text, x, y);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.needsUpdate = true;
+            
+            const spriteMaterial = new THREE.SpriteMaterial({
+                map: texture,
+                transparent: true,
+                depthTest: true,
+                depthWrite: false,
+                opacity: 1
+            });
+            
+            const sprite = new THREE.Sprite(spriteMaterial);
+            const aspect = canvas.width / canvas.height;
+            sprite.scale.set(30 * aspect, 30, 1);
+            
+            return sprite;
+        }
+
+        async function loadGraph() {
+            console.log('loadGraph called');
+            try {
+                // 模拟数据
+                const mockData = {
+                    nodes: [],
+                    links: [],
+                    stats: {
+                        total_nodes: 200,
+                        total_links: 0,
+                        type_counts: {}
+                    }
+                };
+                
+                console.log('mockData initialized:', mockData);
+                
+                const entityTypes = {
+                    'PERSON': { color: '#3b82f6', name: '人物', icon: '👤' },
+                    'ORG': { color: '#22c55e', name: '组织', icon: '🏢' },
+                    'LOCATION': { color: '#f59e0b', name: '地点', icon: '📍' },
+                    'TOOL': { color: '#8b5cf6', name: '工具', icon: '🔧' },
+                    'CONCEPT': { color: '#6366f1', name: '概念', icon: '💡' },
+                    'EVENT': { color: '#ef4444', name: '事件', icon: '🎯' }
+                };
+                
+                const personNames = [
+                    '张伟', '王芳', '李娜', '刘洋', '陈静', '杨明', '赵强', '黄丽', '周杰', '吴婷', 
+                    '徐磊', '孙敏', '马超', '朱红', '胡勇', '林芳', '郭涛', '何秀', '高峰', '罗敏',
+                    '郑伟', '梁芳', '谢娜', '宋洋', '唐静', '许明', '韩强', '冯丽', '邓杰', '曹婷',
+                    '彭磊', '曾敏', '萧超', '于红', '董勇', '袁芳', '蔡涛', '余秀', '潘峰', '杜敏',
+                    '蒋伟', '沈芳', '韩娜', '杨洋', '朱静', '秦明', '许强', '吕丽', '苏杰', '卢婷',
+                    '丁磊', '魏敏', '薛超', '叶红', '阎勇', '余芳', '潘涛', '戴秀', '夏峰', '钟敏'
+                ];
+                
+                const orgNames = [
+                    '阿里巴巴', '腾讯', '百度', '字节跳动', '美团', '京东', '拼多多', '网易', '快手', '小米',
+                    '华为', '中兴', '联想', '海尔', '格力', '比亚迪', '宁德时代', '大疆', '商汤', '旷视',
+                    '中国移动', '中国联通', '中国电信', '工商银行', '建设银行', '农业银行', '中国银行', '招商银行',
+                    '国家电网', '中石油', '中石化', '中海油', '中国建筑', '中国中铁', '中国铁建', '中国交建'
+                ];
+                
+                const locationNames = [
+                    '北京', '上海', '深圳', '广州', '杭州', '成都', '武汉', '西安', '南京', '苏州',
+                    '重庆', '天津', '青岛', '大连', '厦门', '长沙', '郑州', '合肥', '济南', '福州',
+                    '石家庄', '太原', '呼和浩特', '沈阳', '长春', '哈尔滨', '南京', '杭州', '合肥', '福州',
+                    '南昌', '济南', '郑州', '武汉', '长沙', '广州', '南宁', '海口', '成都', '贵阳',
+                    '昆明', '拉萨', '西安', '兰州', '西宁', '银川', '乌鲁木齐'
+                ];
+                
+                const toolNames = [
+                    'JavaScript', 'Python', 'Java', 'C++', 'Go', 'Rust', 'TypeScript', 'Vue', 'React', 'Angular',
+                    'Node.js', 'Django', 'Spring', 'MySQL', 'MongoDB', 'Redis', 'Docker', 'Kubernetes', 'Git', 'Linux',
+                    'Windows', 'macOS', 'Android', 'iOS', 'Unity', 'Unreal', 'Photoshop', 'Illustrator', 'Figma', 'Sketch'
+                ];
+                
+                const conceptNames = [
+                    '人工智能', '机器学习', '深度学习', '知识图谱', '区块链', '云计算', '大数据', '物联网', '5G', '元宇宙',
+                    'Web3', 'NFT', 'DeFi', '智能合约', '边缘计算', '量子计算', '神经网络', '自然语言处理', '计算机视觉',
+                    '虚拟现实', '增强现实', '数字孪生', '工业互联网', '智能制造', '智慧城市', '自动驾驶', '机器人', '无人机'
+                ];
+                
+                const eventNames = [
+                    '技术峰会', '产品发布会', '开发者大会', '行业论坛', '创新大赛', '黑客马拉松', '开源贡献', '技术分享',
+                    '项目启动', '里程碑达成', '版本发布', '用户增长', '市场扩张', '战略合作', '投资融资', '企业上市',
+                    '技术突破', '专利申请', '标准制定', '生态建设', '社区活动', '培训认证', '咨询服务', '解决方案'
+                ];
+                
+                const typeKeys = Object.keys(entityTypes);
+                
+                // 生成200个节点，分为6组
+                const personCount = 35;
+                const orgCount = 35;
+                const locationCount = 35;
+                const toolCount = 30;
+                const conceptCount = 30;
+                const eventCount = 35;
+                
+                const personNodeIds = [];
+                const orgNodeIds = [];
+                const locationNodeIds = [];
+                const toolNodeIds = [];
+                const conceptNodeIds = [];
+                const eventNodeIds = [];
+                
+                // 生成人物节点
+                for (let i = 0; i < personCount; i++) {
+                    const personIndex = Math.floor(Math.random() * personNames.length);
+                    const name = personNames[personIndex];
+                    const node = {
+                        id: `P${i}`,
+                        name: name,
+                        type: 'PERSON',
+                        color: entityTypes['PERSON'].color,
+                        memoryCount: Math.floor(Math.random() * 50) + 1,
+                        summary: '人物实体',
+                        slug: name.toLowerCase().replace(/\s+/g, '-'),
+                        x: (Math.random() - 0.5) * 3000,
+                        y: (Math.random() - 0.5) * 3000,
+                        z: (Math.random() - 0.5) * 3000,
+                        vx: (Math.random() - 0.5) * 10,
+                        vy: (Math.random() - 0.5) * 10,
+                        vz: (Math.random() - 0.5) * 10
+                    };
+                    mockData.nodes.push(node);
+                    personNodeIds.push(node.id);
+                    mockData.stats.type_counts['PERSON'] = (mockData.stats.type_counts['PERSON'] || 0) + 1;
+                }
+                
+                // 生成组织节点
+                for (let i = 0; i < orgCount; i++) {
+                    const orgIndex = Math.floor(Math.random() * orgNames.length);
+                    const name = orgNames[orgIndex] + `_${i}`;
+                    const node = {
+                        id: `O${i}`,
+                        name: name,
+                        type: 'ORG',
+                        color: entityTypes['ORG'].color,
+                        memoryCount: Math.floor(Math.random() * 50) + 1,
+                        summary: '组织实体',
+                        slug: name.toLowerCase().replace(/\s+/g, '-'),
+                        x: (Math.random() - 0.5) * 3000,
+                        y: (Math.random() - 0.5) * 3000,
+                        z: (Math.random() - 0.5) * 3000,
+                        vx: (Math.random() - 0.5) * 10,
+                        vy: (Math.random() - 0.5) * 10,
+                        vz: (Math.random() - 0.5) * 10
+                    };
+                    mockData.nodes.push(node);
+                    orgNodeIds.push(node.id);
+                    mockData.stats.type_counts['ORG'] = (mockData.stats.type_counts['ORG'] || 0) + 1;
+                }
+                
+                // 生成地点节点
+                for (let i = 0; i < locationCount; i++) {
+                    const locationIndex = Math.floor(Math.random() * locationNames.length);
+                    const name = locationNames[locationIndex];
+                    const node = {
+                        id: `L${i}`,
+                        name: name,
+                        type: 'LOCATION',
+                        color: entityTypes['LOCATION'].color,
+                        memoryCount: Math.floor(Math.random() * 50) + 1,
+                        summary: '地点实体',
+                        slug: name.toLowerCase().replace(/\s+/g, '-'),
+                        x: (Math.random() - 0.5) * 3000,
+                        y: (Math.random() - 0.5) * 3000,
+                        z: (Math.random() - 0.5) * 3000,
+                        vx: (Math.random() - 0.5) * 10,
+                        vy: (Math.random() - 0.5) * 10,
+                        vz: (Math.random() - 0.5) * 10
+                    };
+                    mockData.nodes.push(node);
+                    locationNodeIds.push(node.id);
+                    mockData.stats.type_counts['LOCATION'] = (mockData.stats.type_counts['LOCATION'] || 0) + 1;
+                }
+                
+                // 生成工具节点
+                for (let i = 0; i < toolCount; i++) {
+                    const toolIndex = Math.floor(Math.random() * toolNames.length);
+                    const name = toolNames[toolIndex] + `_${i}`;
+                    const node = {
+                        id: `T${i}`,
+                        name: name,
+                        type: 'TOOL',
+                        color: entityTypes['TOOL'].color,
+                        memoryCount: Math.floor(Math.random() * 50) + 1,
+                        summary: '工具实体',
+                        slug: name.toLowerCase().replace(/\s+/g, '-'),
+                        x: (Math.random() - 0.5) * 3000,
+                        y: (Math.random() - 0.5) * 3000,
+                        z: (Math.random() - 0.5) * 3000,
+                        vx: (Math.random() - 0.5) * 10,
+                        vy: (Math.random() - 0.5) * 10,
+                        vz: (Math.random() - 0.5) * 10
+                    };
+                    mockData.nodes.push(node);
+                    toolNodeIds.push(node.id);
+                    mockData.stats.type_counts['TOOL'] = (mockData.stats.type_counts['TOOL'] || 0) + 1;
+                }
+                
+                // 生成概念节点
+                for (let i = 0; i < conceptCount; i++) {
+                    const conceptIndex = Math.floor(Math.random() * conceptNames.length);
+                    const name = conceptNames[conceptIndex] + `_${i}`;
+                    const node = {
+                        id: `C${i}`,
+                        name: name,
+                        type: 'CONCEPT',
+                        color: entityTypes['CONCEPT'].color,
+                        memoryCount: Math.floor(Math.random() * 50) + 1,
+                        summary: '概念实体',
+                        slug: name.toLowerCase().replace(/\s+/g, '-'),
+                        x: (Math.random() - 0.5) * 3000,
+                        y: (Math.random() - 0.5) * 3000,
+                        z: (Math.random() - 0.5) * 3000,
+                        vx: (Math.random() - 0.5) * 10,
+                        vy: (Math.random() - 0.5) * 10,
+                        vz: (Math.random() - 0.5) * 10
+                    };
+                    mockData.nodes.push(node);
+                    conceptNodeIds.push(node.id);
+                    mockData.stats.type_counts['CONCEPT'] = (mockData.stats.type_counts['CONCEPT'] || 0) + 1;
+                }
+                
+                // 生成事件节点
+                for (let i = 0; i < eventCount; i++) {
+                    const eventIndex = Math.floor(Math.random() * eventNames.length);
+                    const name = eventNames[eventIndex];
+                    const node = {
+                        id: `E${i}`,
+                        name: name,
+                        type: 'EVENT',
+                        color: entityTypes['EVENT'].color,
+                        memoryCount: Math.floor(Math.random() * 50) + 1,
+                        summary: '事件实体',
+                        slug: name.toLowerCase().replace(/\s+/g, '-'),
+                        x: (Math.random() - 0.5) * 3000,
+                        y: (Math.random() - 0.5) * 3000,
+                        z: (Math.random() - 0.5) * 3000,
+                        vx: (Math.random() - 0.5) * 10,
+                        vy: (Math.random() - 0.5) * 10,
+                        vz: (Math.random() - 0.5) * 10
+                    };
+                    mockData.nodes.push(node);
+                    eventNodeIds.push(node.id);
+                    mockData.stats.type_counts['EVENT'] = (mockData.stats.type_counts['EVENT'] || 0) + 1;
+                }
+                
+                // 生成符合现实逻辑的关系
+                const linkSet = new Set();
+                
+                // 生成100个关系，确保每个有关系的实体至少有一个关系
+                const allNodeIds = [...personNodeIds, ...orgNodeIds, ...locationNodeIds, ...toolNodeIds, ...conceptNodeIds, ...eventNodeIds];
+                
+                // 随机打乱节点顺序
+                const shuffledNodes = allNodeIds.sort(() => Math.random() - 0.5);
+                
+                // 为前100个节点各分配一个关系
+                for (let i = 0; i < 100 && i < shuffledNodes.length; i++) {
+                    const nodeId = shuffledNodes[i];
+                    let targetId;
+                    let relationType;
+                    
+                    // 根据节点类型选择合适的关系
+                    if (nodeId.startsWith('P')) {
+                        // 人物：与其他人物建立KNOWS关系
+                        targetId = personNodeIds[Math.floor(Math.random() * personNodeIds.length)];
+                        while (targetId === nodeId) {
+                            targetId = personNodeIds[Math.floor(Math.random() * personNodeIds.length)];
+                        }
+                        relationType = 'KNOWS';
+                    } else if (nodeId.startsWith('O')) {
+                        // 组织：与人物建立WORKS_WITH关系
+                        targetId = personNodeIds[Math.floor(Math.random() * personNodeIds.length)];
+                        relationType = 'WORKS_WITH';
+                    } else if (nodeId.startsWith('L')) {
+                        // 地点：与人物建立LOCATED_AT关系
+                        targetId = personNodeIds[Math.floor(Math.random() * personNodeIds.length)];
+                        relationType = 'LOCATED_AT';
+                    } else if (nodeId.startsWith('T')) {
+                        // 工具：与人物建立USES关系
+                        targetId = personNodeIds[Math.floor(Math.random() * personNodeIds.length)];
+                        relationType = 'USES';
+                    } else if (nodeId.startsWith('C')) {
+                        // 概念：与人物建立RELATED_TO关系
+                        targetId = personNodeIds[Math.floor(Math.random() * personNodeIds.length)];
+                        relationType = 'RELATED_TO';
+                    } else if (nodeId.startsWith('E')) {
+                        // 事件：与人物建立PARTICIPATES_IN关系
+                        targetId = personNodeIds[Math.floor(Math.random() * personNodeIds.length)];
+                        relationType = 'PARTICIPATES_IN';
+                    }
+                    
+                    if (targetId) {
+                        const linkKey = [nodeId, targetId].sort().join('-');
+                        if (!linkSet.has(linkKey)) {
+                            const link = {
+                                source: nodeId,
+                                target: targetId,
+                                type: relationType,
+                                color: '#93c5fd',
+                                confidence: Math.random() * 0.3 + 0.7
+                            };
+                            mockData.links.push(link);
+                            linkSet.add(linkKey);
+                        }
+                    }
+                }
+                
+                mockData.stats.total_links = mockData.links.length;
+                
+                console.log('mockData generated:', mockData);
+                console.log('Total nodes:', mockData.nodes.length);
+                console.log('Total links:', mockData.links.length);
+                
+                graphData = mockData;
+                document.getElementById('node-count').textContent = `节点: ${graphData.stats.total_nodes}`;
+                document.getElementById('link-count').textContent = `关系: ${graphData.stats.total_links}`;
+                console.log('UI updated with counts');
+                renderLegend(graphData.stats.type_counts);
+                graphData.degreeMap = calculateDegreeCentrality(graphData.nodes, graphData.links);
+                
+                // 核心修复：统计实体间的连线数量，防止多重关系弹簧累加压垮引擎
+                const pairCounts = {};
+                graphData.links.forEach(link => {
+                    const s = typeof link.source === 'object' ? link.source.id : link.source;
+                    const t = typeof link.target === 'object' ? link.target.id : link.target;
+                    const key = s < t ? `${s}-${t}` : `${t}-${s}`;
+                    pairCounts[key] = (pairCounts[key] || 0) + 1;
+                });
+                graphData.links.forEach(link => {
+                    const s = typeof link.source === 'object' ? link.source.id : link.source;
+                    const t = typeof link.target === 'object' ? link.target.id : link.target;
+                    const key = s < t ? `${s}-${t}` : `${t}-${s}`;
+                    link.pairCount = pairCounts[key] || 1;
+                });
+
+                // 添加黑洞节点（引力源）
+                const blackHoleNode = {
+                    id: 'blackhole',
+                    name: '黑洞',
+                    type: 'BLACKHOLE',
+                    color: '#8b5cf6',
+                    x: 0,
+                    y: 0,
+                    z: 0,
+                    vx: 0,
+                    vy: 0,
+                    vz: 0,
+                    fx: 0,
+                    fy: 0,
+                    fz: 0,
+                    memoryCount: 0,
+                    summary: '引力源，可拖动改变位置'
+                };
+                
+                graphData.nodes.push(blackHoleNode);
+
+                initGraph();
+            } catch (e) {
+                showError('加载失败: ' + e.message);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        function renderLegend(typeCounts) {
+            const legend = document.getElementById('legend');
+            let html = '';
+            for (const [type, count] of Object.entries(typeCounts)) {
+                const config = entityTypes[type] || { color: '#94a3b8', name: type, icon: '📌' };
+                html += `
+                    <div class="legend-item cursor-pointer" onclick="filterByType('${type}')">
+                        <div class="legend-color" style="background: ${config.color}"></div>
+                        <span class="text-gray-700">${config.icon} ${config.name}</span>
+                        <span class="text-gray-400 text-xs ml-auto">${count}</span>
+                    </div>
+                `;
+            }
+            legend.innerHTML = html;
+        }
+
+        function toggleLegend() {
+            document.getElementById('floating-legend').classList.toggle('collapsed');
+        }
+
+        function updateBlackholeGravity() {
+            window.graph.d3ReheatSimulation();
+        }
+
+        function initGraph() {
+            console.log('initGraph called');
+            
+            const container = document.getElementById('graph-container');
+            if (!container) {
+                console.error('Graph container not found');
+                return;
+            }
+            
+            const rect = container.getBoundingClientRect();
+            const width = rect.width || window.innerWidth;
+            const height = rect.height || window.innerHeight - 140;
+
+            console.log('Container dimensions:', { width, height });
+
+            if (window.graph) {
+                try {
+                    window.graph._destructor();
+                } catch (e) {
+                    console.warn('Error destroying previous graph:', e);
+                }
+            }
+
+            try {
+                // 重新赋值给 window.graph，确保全局可用
+                window.graph = ForceGraph3D()(container)
+                    .width(width)
+                    .height(height)
+                    .graphData(graphData)
+                    .nodeId('id')
+                    .nodeLabel(node => node.name)
+                    .nodeColor(node => node.color)
+                    .nodeThreeObject(node => {
+                        let size;
+                        
+                        if (node.id === 'blackhole') {
+                            size = 50;
+                        } else {
+                            size = calculateNodeSize(node, graphData.degreeMap) * graphParams.nodeSizeScale;
+                        }
+                        
+                        if (node.id === 'blackhole') {
+                            const blackholeSize = size;
+                            const group = new THREE.Group();
+                            
+                            // 1. 事件视界（Event Horizon）- 纯黑色球体，绝对黑暗
+                            const eventHorizon = new THREE.Mesh(
+                                new THREE.SphereGeometry(blackholeSize, 128, 128),
+                                new THREE.MeshBasicMaterial({ 
+                                    color: 0x000000,
+                                    transparent: false
+                                })
+                            );
+                            group.add(eventHorizon);
+                            
+                            // 2. 光子球（Photon Sphere）- 光线围绕黑洞旋转的区域
+                            const photonSphere = new THREE.Mesh(
+                                new THREE.SphereGeometry(blackholeSize * 1.5, 64, 64),
+                                new THREE.MeshBasicMaterial({
+                                    color: 0xffffff,
+                                    transparent: true,
+                                    opacity: 0.1,
+                                    side: THREE.BackSide,
+                                    blending: THREE.AdditiveBlending
+                                })
+                            );
+                            group.add(photonSphere);
+                            
+                            // 3. 主吸积盘 - 使用Canvas创建渐变纹理
+                            const diskCanvas = document.createElement('canvas');
+                            diskCanvas.width = 512;
+                            diskCanvas.height = 512;
+                            const diskCtx = diskCanvas.getContext('2d');
+                            const diskGradient = diskCtx.createRadialGradient(256, 256, 50, 256, 256, 256);
+                            diskGradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+                            diskGradient.addColorStop(0.1, 'rgba(255, 200, 100, 0.8)');
+                            diskGradient.addColorStop(0.3, 'rgba(255, 100, 50, 0.6)');
+                            diskGradient.addColorStop(0.5, 'rgba(200, 50, 100, 0.4)');
+                            diskGradient.addColorStop(0.7, 'rgba(100, 0, 150, 0.2)');
+                            diskGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                            diskCtx.fillStyle = diskGradient;
+                            diskCtx.fillRect(0, 0, 512, 512);
+                            
+                            const diskTexture = new THREE.CanvasTexture(diskCanvas);
+                            const accretionDiskGeometry = new THREE.PlaneGeometry(blackholeSize * 5, blackholeSize * 5);
+                            const accretionDiskMaterial = new THREE.MeshBasicMaterial({
+                                map: diskTexture,
+                                transparent: true,
+                                opacity: 0.9,
+                                side: THREE.DoubleSide,
+                                blending: THREE.AdditiveBlending,
+                                depthWrite: false
+                            });
+                            const accretionDisk = new THREE.Mesh(accretionDiskGeometry, accretionDiskMaterial);
+                            accretionDisk.rotation.x = Math.PI / 2;
+                            group.add(accretionDisk);
+                            
+                            // 4. 吸积盘内圈 - 更热更亮
+                            const innerDiskCanvas = document.createElement('canvas');
+                            innerDiskCanvas.width = 256;
+                            innerDiskCanvas.height = 256;
+                            const innerCtx = innerDiskCanvas.getContext('2d');
+                            const innerGradient = innerCtx.createRadialGradient(128, 128, 20, 128, 128, 128);
+                            innerGradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+                            innerGradient.addColorStop(0.2, 'rgba(255, 220, 150, 0.9)');
+                            innerGradient.addColorStop(0.4, 'rgba(255, 150, 50, 0.7)');
+                            innerGradient.addColorStop(0.6, 'rgba(255, 80, 20, 0.5)');
+                            innerGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                            innerCtx.fillStyle = innerGradient;
+                            innerCtx.fillRect(0, 0, 256, 256);
+                            
+                            const innerTexture = new THREE.CanvasTexture(innerDiskCanvas);
+                            const innerDiskGeometry = new THREE.PlaneGeometry(blackholeSize * 2.5, blackholeSize * 2.5);
+                            const innerDiskMaterial = new THREE.MeshBasicMaterial({
+                                map: innerTexture,
+                                transparent: true,
+                                opacity: 1,
+                                side: THREE.DoubleSide,
+                                blending: THREE.AdditiveBlending,
+                                depthWrite: false
+                            });
+                            const innerDisk = new THREE.Mesh(innerDiskGeometry, innerDiskMaterial);
+                            innerDisk.rotation.x = Math.PI / 2;
+                            group.add(innerDisk);
+                            
+                            // 5. 引力透镜光环（爱因斯坦环）
+                            const lensRingGeometry = new THREE.TorusGeometry(
+                                blackholeSize * 2.8, 
+                                blackholeSize * 0.15, 
+                                32, 
+                                128
+                            );
+                            const lensRingMaterial = new THREE.MeshBasicMaterial({
+                                color: 0x88ccff,
+                                transparent: true,
+                                opacity: 0.6,
+                                blending: THREE.AdditiveBlending
+                            });
+                            const lensRing = new THREE.Mesh(lensRingGeometry, lensRingMaterial);
+                            lensRing.rotation.x = Math.PI / 2;
+                            group.add(lensRing);
+                            
+                            // 6. 内部发光环 - 吸积盘最内层
+                            const innerGlowGeometry = new THREE.RingGeometry(
+                                blackholeSize * 1.01,
+                                blackholeSize * 1.15,
+                                64
+                            );
+                            const innerGlowMaterial = new THREE.MeshBasicMaterial({
+                                color: 0xffaa00,
+                                transparent: true,
+                                opacity: 0.9,
+                                side: THREE.DoubleSide,
+                                blending: THREE.AdditiveBlending
+                            });
+                            const innerGlow = new THREE.Mesh(innerGlowGeometry, innerGlowMaterial);
+                            innerGlow.rotation.x = Math.PI / 2;
+                            group.add(innerGlow);
+                            
+                            return group;
+                        } else {
+                            const group = new THREE.Group();
+                            
+                            const sphere = new THREE.Mesh(
+                                new THREE.SphereGeometry(size, 32, 32),
+                                new THREE.MeshBasicMaterial({ color: node.color })
+                            );
+                            group.add(sphere);
+                            
+                            const labelGroup = createNodeLabel(node.name, {
+                                fontSize: 28,
+                                textColor: '#ffffff',
+                                outlineColor: '#000000',
+                                sphereRadius: size
+                            });
+                            labelGroup.userData.isLabel = true;
+                            labelGroup.userData.nodeId = node.id;
+                            labelGroup.userData.nodeSize = size;
+                            group.add(labelGroup);
+                            
+                            group.userData.nodeId = node.id;
+                            
+                            return group;
+                        }
+                    })
+                    .linkSource('source')
+                    .linkTarget('target')
+                    .linkLabel(link => {
+                        const relName = relationTypes[link.type] || link.type;
+                        return relName;
+                    })
+                    .linkColor(link => link.color)
+                    .linkWidth(2)
+                    .linkOpacity(0.6)
+                    .linkDirectionalParticles(2)
+                    .linkDirectionalParticleSpeed(0.01)
+                    .linkDirectionalParticleWidth(2)
+                    .linkThreeObjectExtend(true)
+                    .linkThreeObject(link => {
+                        const relName = relationTypes[link.type] || link.type;
+                        const sprite = createTextSprite(relName, {
+                            fontSize: 28,
+                            textColor: '#ffffff',
+                            outlineColor: '#000000'
+                        });
+                        sprite.userData.isLinkLabel = true;
+                        const sId = typeof link.source === 'object' ? link.source.id : link.source;
+                        const tId = typeof link.target === 'object' ? link.target.id : link.target;
+                        sprite.userData.linkId = `${sId}-${tId}`;
+                        return sprite;
+                    })
+                    .linkPositionUpdate((sprite, { start, end }) => {
+                        const midPos = {
+                            x: (start.x + end.x) / 2,
+                            y: (start.y + end.y) / 2,
+                            z: (start.z + end.z) / 2
+                        };
+                        sprite.position.set(midPos.x, midPos.y, midPos.z);
+                    })
+                    .onNodeClick(onNodeClick)
+                    .onNodeDragEnd(node => { 
+                        node.fx = node.x; 
+                        node.fy = node.y;
+                        node.fz = node.z;
+                        if (node.id === 'blackhole') {
+                            updateBlackholeGravity();
+                        }
+                    })
+                    .onNodeDrag(node => {
+                        if (node.id === 'blackhole') {
+                            updateBlackholeGravity();
+                        }
+                    })
+                    .onNodeRightClick(node => { 
+                        node.fx = undefined; 
+                        node.fy = undefined; 
+                        node.fz = undefined; 
+                        window.graph.d3ReheatSimulation(); 
+                    })
+                    .onNodeHover(onNodeHover)
+                    .onLinkHover(onLinkHover)
+                    .cooldownTicks(3000)
+                    .d3AlphaDecay(0.005)
+                    .d3VelocityDecay(graphParams.velocityDecay)
+                    .cameraPosition({ x: 0, y: 500, z: 1000 })
+                    .showNavInfo(true)
+                    .enableNodeDrag(true)
+                    .backgroundColor('#02020a');
+
+                console.log('Force Graph created successfully:', window.graph);
+
+                // 添加星空背景
+                setTimeout(() => {
+                    addStarBackground();
+                }, 500);
+
+                // 调整相机控制速度
+                setTimeout(() => {
+                    const controls = window.graph.controls();
+                    if (controls) {
+                        controls.rotateSpeed = 10.0;
+                        controls.zoomSpeed = 2.0;
+                        controls.panSpeed = 2.0;
+                        console.log('Camera controls speed updated');
+                    }
+                }, 100);
+
+                // 禁用浏览器的默认右键手势
+                const canvas = container.querySelector('canvas');
+                if (canvas) {
+                    canvas.addEventListener('contextmenu', (e) => {
+                        e.preventDefault();
+                        return false;
+                    });
+                    
+                    canvas.addEventListener('mousedown', (e) => {
+                        if (e.button === 2) {
+                            e.preventDefault();
+                            return false;
+                        }
+                    });
+                    
+                    canvas.addEventListener('mouseup', (e) => {
+                        if (e.button === 2) {
+                            e.preventDefault();
+                            return false;
+                        }
+                    });
+                    
+                    canvas.addEventListener('mousemove', (e) => {
+                        if (e.buttons === 2) {
+                            e.preventDefault();
+                            return false;
+                        }
+                    });
+                }
+
+                // 注入物理法则
+                if (window.graph) {
+                    console.log('Setting up physics forces with params:', graphParams);
+                    
+                    window.graph.d3Force('link')
+                        .distance(link => {
+                            const sSize = calculateNodeSize(link.source, graphData.degreeMap) * graphParams.nodeSizeScale;
+                            const tSize = calculateNodeSize(link.target, graphData.degreeMap) * graphParams.nodeSizeScale;
+                            return sSize + tSize + graphParams.linkDistance;
+                        })
+                        .strength(link => {
+                            // 智能卸力：如果两个节点间有 5 条线，那么每条线的硬度除以 5，防止物理坍缩！
+                            return graphParams.linkStrength / link.pairCount;
+                        });
+
+                    window.graph.d3Force('charge').strength(graphParams.chargeStrength);
+                    
+                    window.graph.d3Force('collide', d3.forceCollide().radius(node => {
+                        return calculateNodeSize(node, graphData.degreeMap) * graphParams.nodeSizeScale + graphParams.collisionBuffer;
+                    }).iterations(3));
+
+                    // 移除默认的center力，只使用blackhole力
+                    window.graph.d3Force('center', null);
+                    
+                    // 添加自定义3D引力（黑洞引力）
+                    window.graph.d3Force('blackhole3d', alpha => {
+                        const blackholeNode = graphData.nodes.find(n => n.id === 'blackhole');
+                        if (!blackholeNode) return;
+                        
+                        const strength = graphParams.centerGravity * alpha * 60;
+                        
+                        graphData.nodes.forEach(node => {
+                            if (node.id === 'blackhole') return;
+                            if (node.fx !== undefined && node.fy !== undefined && node.fz !== undefined) return;
+                            
+                            const dx = blackholeNode.x - node.x;
+                            const dy = blackholeNode.y - node.y;
+                            const dz = blackholeNode.z - node.z;
+                            const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                            
+                            if (distance > 0) {
+                                node.vx += (dx / distance) * strength;
+                                node.vy += (dy / distance) * strength;
+                                node.vz += (dz / distance) * strength;
+                            }
+                        });
+                    });
+                    
+                    console.log('Physics forces setup completed');
+                }
+
+                setTimeout(() => {
+                    if (window.graph && graphData.nodes && graphData.nodes.length > 0) {
+                        const controls = window.graph.controls();
+                        if (controls) {
+                            // 初始化时将target设置为(0, 0, 0)
+                            controls.target.set(0, 0, 0);
+                            console.log('Initial OrbitControls target set to:', controls.target);
+                        }
+                        window.graph.cameraPosition({ x: 0, y: 500, z: 1000 });
+                        
+                        // 启动标签可见性控制
+                        console.log('Starting label visibility control...');
+                        try {
+                            updateLabelVisibility();
+                        } catch (error) {
+                            console.error('Error starting label visibility:', error);
+                        }
+                    } else {
+                        console.log('Cannot start label visibility - graph or nodes not ready');
+                    }
+                }, 300);
+                
+                console.log('Graph initialized successfully');
+            } catch (error) {
+                console.error('Error initializing graph:', error);
+                showError('图谱初始化失败: ' + error.message);
+            }
+            
+            // 移除外部的标签创建调用
+        }
+
+        // ==================== 星空背景 ====================
+
+        // 彗星数组
+        let comets = [];
+
+        function createComet(scene) {
+            const cometGroup = new THREE.Group();
+            
+            // 彗星头部
+            const headGeometry = new THREE.SphereGeometry(3, 16, 16);
+            const headMaterial = new THREE.MeshBasicMaterial({
+                color: 0xaaddff,
+                transparent: true,
+                opacity: 0.9
+            });
+            const head = new THREE.Mesh(headGeometry, headMaterial);
+            cometGroup.add(head);
+            
+            // 彗尾
+            const tailGeometry = new THREE.BufferGeometry();
+            const tailLength = 20;
+            const tailVertices = [];
+            
+            for (let i = 0; i < tailLength; i++) {
+                const t = i / tailLength;
+                tailVertices.push(0, 0, -t * 80);
+            }
+            
+            tailGeometry.setAttribute('position', new THREE.Float32BufferAttribute(tailVertices, 3));
+            
+            const tailMaterial = new THREE.PointsMaterial({
+                color: 0x88ccff,
+                size: 4,
+                transparent: true,
+                opacity: 0.6,
+                blending: THREE.AdditiveBlending
+            });
+            
+            const tail = new THREE.Points(tailGeometry, tailMaterial);
+            cometGroup.add(tail);
+            
+            // 随机起始位置（在远处，围绕黑洞）
+            const angle = Math.random() * Math.PI * 2;
+            const radius = 5000 + Math.random() * 10000;
+            const height = (Math.random() - 0.5) * 4000;
+            
+            cometGroup.position.set(
+                Math.cos(angle) * radius,
+                height,
+                Math.sin(angle) * radius
+            );
+            
+            // 初始速度：随机方向，部分高速逃逸，部分低速被捕获
+            const speedType = Math.random();
+            let speed;
+            if (speedType < 0.3) {
+                // 30%高速彗星（可能逃逸）
+                speed = 15 + Math.random() * 20;
+            } else if (speedType < 0.7) {
+                // 40%中速彗星（轨迹弯曲）
+                speed = 5 + Math.random() * 10;
+            } else {
+                // 30%低速彗星（容易被捕获）
+                speed = 1 + Math.random() * 4;
+            }
+            
+            // 随机方向（不完全切向）
+            const directionType = Math.random();
+            let velX, velY, velZ;
+            
+            if (directionType < 0.5) {
+                // 50%切向运动
+                velX = -Math.sin(angle) * speed;
+                velZ = Math.cos(angle) * speed;
+                velY = (Math.random() - 0.5) * speed * 0.3;
+            } else if (directionType < 0.75) {
+                // 25%径向向外（逃逸）
+                velX = Math.cos(angle) * speed;
+                velZ = Math.sin(angle) * speed;
+                velY = (Math.random() - 0.5) * speed * 0.5;
+            } else {
+                // 25%随机方向
+                const randomAngle = Math.random() * Math.PI * 2;
+                velX = Math.cos(randomAngle) * speed;
+                velZ = Math.sin(randomAngle) * speed;
+                velY = (Math.random() - 0.5) * speed;
+            }
+            
+            const velocity = new THREE.Vector3(velX, velY, velZ);
+            
+            cometGroup.lookAt(cometGroup.position.clone().add(velocity));
+            
+            scene.add(cometGroup);
+            
+            return {
+                mesh: cometGroup,
+                velocity: velocity,
+                life: 1.0,
+                absorbed: false
+            };
+        }
+
+        function updateComets() {
+            if (!window.graph) return;
+            const scene = window.graph.scene();
+            if (!scene) return;
+            
+            // 获取黑洞位置和质量
+            const blackholeNode = graphData.nodes.find(n => n.id === 'blackhole');
+            const blackholePos = blackholeNode ? new THREE.Vector3(blackholeNode.x, blackholeNode.y, blackholeNode.z) : new THREE.Vector3(0, 0, 0);
+            const blackholeSize = blackholeNode ? calculateNodeSize(blackholeNode, graphData.degreeMap) * graphParams.nodeSizeScale : 150;
+            const eventHorizonRadius = blackholeSize * 1.05;
+            
+            // 黑洞质量（用于引力计算）
+            const blackholeMass = blackholeSize * blackholeSize * 100;
+            
+            // 更新现有彗星
+            for (let i = comets.length - 1; i >= 0; i--) {
+                const comet = comets[i];
+                
+                // 计算与黑洞的距离
+                const toBlackhole = new THREE.Vector3().subVectors(blackholePos, comet.mesh.position);
+                const distanceToBlackhole = toBlackhole.length();
+                
+                // 引力影响范围
+                const gravityRadius = 30000;
+                
+                if (distanceToBlackhole < gravityRadius && distanceToBlackhole > eventHorizonRadius) {
+                    // 纯引力效果 - 适度引力
+                    const gravityStrength = 8000000 / (distanceToBlackhole * distanceToBlackhole + 8000);
+                    
+                    // 引力方向指向黑洞中心
+                    const gravityDir = toBlackhole.normalize();
+                    
+                    // 应用引力
+                    const gravityForce = gravityDir.multiplyScalar(gravityStrength);
+                    comet.velocity.add(gravityForce);
+                }
+                
+                // 如果进入事件视界，被黑洞吞噬
+                if (distanceToBlackhole < eventHorizonRadius) {
+                    // 强吸引力
+                    const pullStrength = 30;
+                    const pullDir = toBlackhole.normalize();
+                    comet.velocity.add(pullDir.multiplyScalar(pullStrength));
+                    
+                    // 彗星被吞噬效果 - 快速消失
+                    comet.life -= 0.25;
+                    comet.absorbed = true;
+                    
+                    // 缩放效果（被拉伸）
+                    const scale = Math.max(0.05, comet.life);
+                    comet.mesh.scale.set(scale * 4, scale * 0.2, scale * 0.2);
+                } else {
+                    // 正常生命周期衰减
+                    comet.life -= 0.0005;
+                }
+                
+                // 限制最大速度
+                const maxSpeed = 250;
+                if (comet.velocity.length() > maxSpeed) {
+                    comet.velocity.normalize().multiplyScalar(maxSpeed);
+                }
+                
+                // 更新位置
+                comet.mesh.position.add(comet.velocity);
+                
+                // 更新朝向（朝向速度方向）
+                const lookTarget = comet.mesh.position.clone().add(comet.velocity);
+                comet.mesh.lookAt(lookTarget);
+                
+                // 更新透明度
+                comet.mesh.children.forEach(child => {
+                    if (child.material) {
+                        child.material.opacity = Math.max(0, comet.life * (child === comet.mesh.children[0] ? 0.9 : 0.6));
+                    }
+                });
+                
+                // 移除死亡彗星或被吸收太久的彗星
+                const tooLongAbsorbed = comet.absorbed && comet.life < 0.3;
+                if (comet.life <= 0 || comet.mesh.position.length() > 30000 || tooLongAbsorbed) {
+                    scene.remove(comet.mesh);
+                    comets.splice(i, 1);
+                }
+            }
+            
+            // 随机生成新彗星（增加刷新率）
+            if (Math.random() < 0.08 && comets.length < 15) {
+                comets.push(createComet(scene));
+            }
+        }
+
+        function addStarBackground() {
+            if (!window.graph) return;
+            
+            try {
+                const scene = window.graph.scene();
+                if (!scene) return;
+                
+                // 噪声函数 - 用于自然分布
+                function noise(x, y, z) {
+                    return Math.sin(x * 0.001) * Math.cos(y * 0.001) * Math.sin(z * 0.001) +
+                           Math.sin(x * 0.003 + 100) * Math.cos(y * 0.003) * 0.5;
+                }
+                
+                // 1. 亮星 - 自然随机分布
+                const brightStarsGeometry = new THREE.BufferGeometry();
+                const brightStarsMaterial = new THREE.PointsMaterial({
+                    color: 0xffffff,
+                    size: 2.5,
+                    transparent: true,
+                    opacity: 0.9,
+                    sizeAttenuation: true,
+                    blending: THREE.AdditiveBlending
+                });
+                
+                const brightStarsVertices = [];
+                const numBrightStars = 2000;
+                
+                for (let i = 0; i < numBrightStars; i++) {
+                    // 使用噪声函数创建聚类效果
+                    let x = (Math.random() - 0.5) * 20000;
+                    let y = (Math.random() - 0.5) * 20000;
+                    let z = (Math.random() - 0.5) * 20000;
+                    
+                    // 根据噪声值调整密度
+                    const n = noise(x, y, z);
+                    if (n > 0.3) {
+                        // 在高密度区域添加更多星星
+                        x += (Math.random() - 0.5) * 2000;
+                        y += (Math.random() - 0.5) * 2000;
+                        z += (Math.random() - 0.5) * 2000;
+                    }
+                    
+                    brightStarsVertices.push(x, y, z);
+                }
+                
+                brightStarsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(brightStarsVertices, 3));
+                const brightStarField = new THREE.Points(brightStarsGeometry, brightStarsMaterial);
+                scene.add(brightStarField);
+                
+                // 2. 中等亮度星星 - 聚类分布
+                const mediumStarsGeometry = new THREE.BufferGeometry();
+                const mediumStarsMaterial = new THREE.PointsMaterial({
+                    color: 0xaaccff,
+                    size: 1.5,
+                    transparent: true,
+                    opacity: 0.7,
+                    sizeAttenuation: true,
+                    blending: THREE.AdditiveBlending
+                });
+                
+                const mediumStarsVertices = [];
+                const numMediumStars = 5000;
+                const numClusters = 15;
+                
+                for (let i = 0; i < numMediumStars; i++) {
+                    let x, y, z;
+                    
+                    if (Math.random() < 0.6) {
+                        // 60%的星星在星团中
+                        const clusterIndex = Math.floor(Math.random() * numClusters);
+                        const clusterAngle = clusterIndex * (Math.PI * 2 / numClusters);
+                        const clusterRadius = 3000 + Math.random() * 7000;
+                        const clusterX = Math.cos(clusterAngle) * clusterRadius;
+                        const clusterY = (Math.random() - 0.5) * 4000;
+                        const clusterZ = Math.sin(clusterAngle) * clusterRadius;
+                        
+                        x = clusterX + (Math.random() - 0.5) * 3000;
+                        y = clusterY + (Math.random() - 0.5) * 1500;
+                        z = clusterZ + (Math.random() - 0.5) * 3000;
+                    } else {
+                        // 40%的星星随机分布
+                        x = (Math.random() - 0.5) * 25000;
+                        y = (Math.random() - 0.5) * 25000;
+                        z = (Math.random() - 0.5) * 25000;
+                    }
+                    
+                    mediumStarsVertices.push(x, y, z);
+                }
+                
+                mediumStarsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(mediumStarsVertices, 3));
+                const mediumStarField = new THREE.Points(mediumStarsGeometry, mediumStarsMaterial);
+                scene.add(mediumStarField);
+                
+                // 3. 彩色星云粒子 - 自然聚类
+                const nebulaColors = [0x6a0dad, 0x4169e1, 0x00ced1, 0xff69b4, 0xff4500];
+                const nebulaGeometry = new THREE.BufferGeometry();
+                const nebulaMaterial = new THREE.PointsMaterial({
+                    size: 8,
+                    transparent: true,
+                    opacity: 0.3,
+                    sizeAttenuation: true,
+                    blending: THREE.AdditiveBlending,
+                    vertexColors: true
+                });
+                
+                const nebulaVertices = [];
+                const nebulaColorsArray = [];
+                const numNebula = 3000;
+                const nebulaClusters = 8;
+                
+                for (let i = 0; i < numNebula; i++) {
+                    let x, y, z;
+                    
+                    if (Math.random() < 0.7) {
+                        // 70%在星云团中
+                        const clusterIndex = Math.floor(Math.random() * nebulaClusters);
+                        const clusterAngle = clusterIndex * (Math.PI * 2 / nebulaClusters) + Math.random() * 0.5;
+                        const clusterRadius = 4000 + Math.random() * 6000;
+                        const clusterX = Math.cos(clusterAngle) * clusterRadius;
+                        const clusterZ = Math.sin(clusterAngle) * clusterRadius;
+                        const clusterY = (Math.random() - 0.5) * 3000;
+                        
+                        // 使用高斯分布让星云更自然
+                        const spread = 1500 + Math.random() * 1000;
+                        x = clusterX + (Math.random() - 0.5) * spread;
+                        y = clusterY + (Math.random() - 0.5) * spread * 0.5;
+                        z = clusterZ + (Math.random() - 0.5) * spread;
+                    } else {
+                        // 30%随机分布
+                        x = (Math.random() - 0.5) * 18000;
+                        y = (Math.random() - 0.5) * 18000;
+                        z = (Math.random() - 0.5) * 18000;
+                    }
+                    
+                    nebulaVertices.push(x, y, z);
+                    
+                    const colorHex = nebulaColors[Math.floor(Math.random() * nebulaColors.length)];
+                    const color = new THREE.Color(colorHex);
+                    const variation = 0.7 + Math.random() * 0.6;
+                    nebulaColorsArray.push(color.r * variation, color.g * variation, color.b * variation);
+                }
+                
+                nebulaGeometry.setAttribute('position', new THREE.Float32BufferAttribute(nebulaVertices, 3));
+                nebulaGeometry.setAttribute('color', new THREE.Float32BufferAttribute(nebulaColorsArray, 3));
+                const nebulaField = new THREE.Points(nebulaGeometry, nebulaMaterial);
+                scene.add(nebulaField);
+                
+                // 4. 微小星尘 - 自然填充
+                const dustGeometry = new THREE.BufferGeometry();
+                const dustMaterial = new THREE.PointsMaterial({
+                    color: 0xffffff,
+                    size: 0.6,
+                    transparent: true,
+                    opacity: 0.5,
+                    sizeAttenuation: true
+                });
+                
+                const dustVertices = [];
+                const numDust = 15000;
+                
+                for (let i = 0; i < numDust; i++) {
+                    // 使用幂律分布让星星更集中在某些区域
+                    const r = Math.pow(Math.random(), 0.7) * 15000;
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.acos(2 * Math.random() - 1);
+                    
+                    const x = r * Math.sin(phi) * Math.cos(theta);
+                    const y = r * Math.sin(phi) * Math.sin(theta);
+                    const z = r * Math.cos(phi);
+                    
+                    dustVertices.push(x, y, z);
+                }
+                
+                dustGeometry.setAttribute('position', new THREE.Float32BufferAttribute(dustVertices, 3));
+                const dustField = new THREE.Points(dustGeometry, dustMaterial);
+                scene.add(dustField);
+                
+                // 初始化一些彗星
+                for (let i = 0; i < 3; i++) {
+                    comets.push(createComet(scene));
+                }
+                
+                // 6. 环境光照
+                const ambientLight = new THREE.AmbientLight(0x1a0a2e, 0.4);
+                scene.add(ambientLight);
+                
+                // 7. 多彩点光源 - 模拟恒星光芒
+                const lightPositions = [
+                    { x: 4000, y: 2000, z: -3000, color: 0xff6b6b, intensity: 0.8 },
+                    { x: -3500, y: -1500, z: 2500, color: 0x4ecdc4, intensity: 0.7 },
+                    { x: 2000, y: -3000, z: -4000, color: 0xffe66d, intensity: 0.6 },
+                    { x: -4000, y: 2500, z: 1500, color: 0xa8e6cf, intensity: 0.5 },
+                    { x: 3000, y: 3000, z: 3000, color: 0xff8b94, intensity: 0.6 }
+                ];
+                
+                lightPositions.forEach(pos => {
+                    const light = new THREE.PointLight(pos.color, pos.intensity, 8000);
+                    light.position.set(pos.x, pos.y, pos.z);
+                    scene.add(light);
+                });
+                
+                console.log('Enhanced star background with comets added successfully');
+            } catch (error) {
+                console.error('Error adding star background:', error);
+            }
+        }
+
+        function updateLabelVisibility() {
+            if (!window.graph || !graphData.nodes) {
+                requestAnimationFrame(updateLabelVisibility);
+                return;
+            }
+            
+            const camera = window.graph.camera();
+            const scene = window.graph.scene();
+            const labelDistance = graphParams.labelDistance;
+            
+            scene.traverse((obj) => {
+                if (obj.userData && obj.userData.isLabel && obj.userData.labelSprite) {
+                    const nodeId = obj.userData.nodeId;
+                    const node = graphData.nodes.find(n => n.id === nodeId);
+                    if (!node || node.x === undefined) {
+                        obj.visible = false;
+                        return;
+                    }
+                    
+                    const nodePos = new THREE.Vector3(node.x, node.y, node.z);
+                    const distance = camera.position.distanceTo(nodePos);
+                    
+                    if (distance < labelDistance) {
+                        const nodeSize = obj.userData.nodeSize || 30;
+                        const toCamera = new THREE.Vector3().subVectors(camera.position, nodePos).normalize();
+                        
+                        const labelOffset = nodeSize * 1.15;
+                        obj.position.set(
+                            toCamera.x * labelOffset,
+                            toCamera.y * labelOffset,
+                            toCamera.z * labelOffset
+                        );
+                        
+                        const sprite = obj.userData.labelSprite;
+                        if (sprite && sprite.material) {
+                            const maxTextScale = Math.min(1.5, nodeSize / 20);
+                            const scaleFactor = Math.max(0.5, Math.min(maxTextScale, 400 / distance));
+                            sprite.scale.set(
+                                sprite.userData.baseScaleX * scaleFactor,
+                                sprite.userData.baseScaleY * scaleFactor,
+                                1
+                            );
+                            sprite.material.opacity = Math.min(1, 600 / distance);
+                        }
+                        
+                        obj.visible = true;
+                    } else {
+                        obj.visible = false;
+                    }
+                }
+                
+                if (obj.userData && obj.userData.isLinkLabel) {
+                    const linkId = obj.userData.linkId;
+                    const [sourceId, targetId] = linkId.split('-');
+                    const source = graphData.nodes.find(n => n.id === sourceId);
+                    const target = graphData.nodes.find(n => n.id === targetId);
+                    
+                    if (!source || !target || source.x === undefined || target.x === undefined) {
+                        obj.visible = false;
+                        return;
+                    }
+                    
+                    const midPos = new THREE.Vector3(
+                        (source.x + target.x) / 2,
+                        (source.y + target.y) / 2,
+                        (source.z + target.z) / 2
+                    );
+                    const distance = camera.position.distanceTo(midPos);
+                    
+                    if (distance < labelDistance) {
+                        const baseScale = 25;
+                        const scaleFactor = Math.max(0.5, Math.min(1.8, 600 / distance));
+                        const aspect = obj.scale.x / obj.scale.y;
+                        obj.scale.set(baseScale * aspect * scaleFactor, baseScale * scaleFactor, 1);
+                        obj.material.opacity = Math.min(1, 800 / distance);
+                        obj.visible = true;
+                    } else {
+                        obj.visible = false;
+                    }
+                }
+            });
+            
+            // 更新彗星动画
+            updateComets();
+            
+            requestAnimationFrame(updateLabelVisibility);
+        }
+
+        // ==================== 交互事件 ====================
+
+        function onNodeClick(node) {
+            if (!node) return;
+            highlightedNode = node;
+            focusOnNode(node);
+        }
+
+        function onNodeHover(node) {
+            const tooltip = document.getElementById('tooltip');
+            if (node) {
+                const typeConfig = entityTypes[node.type] || { name: node.type };
+                tooltip.innerHTML = `<strong>${node.name}</strong><br>类型: ${typeConfig.name}<br>关联记忆: ${node.memoryCount}`;
+                tooltip.style.display = 'block';
+                document.body.style.cursor = 'pointer';
+            } else {
+                tooltip.style.display = 'none';
+                document.body.style.cursor = 'default';
+            }
+        }
+
+        function onLinkHover(link) {
+            const tooltip = document.getElementById('tooltip');
+            if (link) {
+                const relName = relationTypes[link.type] || link.type;
+                tooltip.innerHTML = `<strong>${link.source.name}</strong> <span style="color: #93c5fd;">→ ${relName} →</span> <strong>${link.target.name}</strong><br>置信度: ${(link.confidence * 100).toFixed(0)}%`;
+                tooltip.style.display = 'block';
+            } else {
+                tooltip.style.display = 'none';
+            }
+        }
+
+        document.addEventListener('mousemove', (e) => {
+            const tooltip = document.getElementById('tooltip');
+            if (tooltip.style.display !== 'none') {
+                tooltip.style.left = (e.clientX + 15) + 'px';
+                tooltip.style.top = (e.clientY + 15) + 'px';
+            }
+        });
+
+        function closePanel() {
+            document.getElementById('node-panel').classList.remove('show');
+            highlightedNode = null;
+        }
+
+            const node = graphData.nodes.find(n => String(n.id) === String(nodeId));
+        function handleSearch(event) { if (event.key === 'Enter') searchNode(); }
+
+        async function searchNode() {
+            const query = document.getElementById('search-input').value.trim();
+            if (!query) return;
+
+            try {
+                const response = await fetch(`/api/entities/search?q=${encodeURIComponent(query)}&limit=10`);
+                const result = await response.json();
+
+                if (!result.success || result.data.results.length === 0) {
+                    alert('未找到匹配的实体');
+                    return;
+                }
+
+                const matches = result.data.results;
+
+                if (matches.length === 1) {
+                    // 只有一个结果，直接选中
+                    const node = graphData.nodes.find(n => n.slug === matches[0].slug);
+                    if (node) {
+                        highlightedNode = node;
+                        focusOnNode(node);
+                    } else {
+                        alert('该实体不在当前视图中');
+                    }
+                } else {
+                    // 多个结果，显示选择对话框
+                    showEntitySelectionDialog(matches);
+                }
+            } catch (error) {
+                console.error('搜索失败:', error);
+                alert('搜索失败: ' + error.message);
+            }
+        }
+
+        function showEntitySelectionDialog(entities) {
+            const dialog = document.createElement('div');
+            dialog.id = 'entity-selection-dialog';
+            dialog.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); padding: 20px; z-index: 10000; max-width: 500px; width: 90%; max-height: 70vh; overflow-y: auto;';
+            dialog.innerHTML = '<h3 style="margin: 0 0 15px 0; color: #1e3a5f;">找到多个匹配的实体</h3><p style="margin: 0 0 15px 0; color: #64748b;">请选择要查看的实体：</p><div id="entity-list" style="display: flex; flex-direction: column; gap: 10px;"></div><div style="margin-top: 15px; text-align: right;"><button onclick="document.getElementById('entity-selection-dialog').remove(); document.getElementById('overlay').remove();" style="padding: 8px 16px; background: #94a3b8; color: white; border: none; border-radius: 6px; cursor: pointer;">取消</button></div>';
+            const entityList = dialog.querySelector('#entity-list');
+
+            entities.forEach((entity, index) => {
+                const item = document.createElement('div');
+                item.style.cssText = 'padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; cursor: pointer; transition: all 0.2s;';
+                item.onmouseover = () => item.style.background = '#f1f5f9';
+                item.onmouseout = () => item.style.background = 'white';
+                item.innerHTML = `<div style="font-weight: 600; color: #1e3a5f;">${entity.name}</div><div style="font-size: 12px; color: #64748b; margin-top: 4px;"><span style="background: #3b82f6; color: white; padding: 2px 8px; border-radius: 4px;">${entity.type}</span><span style="margin-left: 8px;">${entity.memory_count} 条记忆</span></div>${entity.summary ? `<div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">${entity.summary.substring(0, 50)}...</div>` : ''}`;
+                item.onclick = () => {
+                    const node = graphData.nodes.find(n => n.slug === entity.slug);
+                    if (node) {
+                        highlightedNode = node;
+                        focusOnNode(node);
+                        dialog.remove();
+                        const overlay = document.getElementById('overlay');
+                        if (overlay) overlay.remove();
+                    } else {
+                        alert('该实体不在当前视图中');
+                    }
+                };
+                entityList.appendChild(item);
+            });
+
+            const overlay = document.createElement('div');
+            overlay.id = 'overlay';
+            overlay.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 9999;';
+            overlay.onclick = () => { dialog.remove(); overlay.remove(); };
+            document.body.appendChild(overlay);
+            document.body.appendChild(dialog);
+        }
+
+        function focusNode(nodeId) {
+            const node = graphData.nodes.find(n => String(n.id) === String(nodeId));
+            if (node) {
+                highlightedNode = node;
+                focusOnNode(node);
+            }
+        }
+
+            if (node) {
+                highlightedNode = node;
+                focusOnNode(node);
+            }
+        }
+
+        function focusOnNode(node) {
+            if (!node || !window.graph) return;
+            
+            console.log('Focusing on node:', node.name, 'at position:', { x: node.x, y: node.y, z: node.z });
+            
+            // 获取OrbitControls
+            const controls = window.graph.controls();
+            
+            // 计算节点的关系数量
+            const nodeDegree = graphData.degreeMap[node.id] || 0;
+            console.log('Node degree:', nodeDegree);
+            
+            // 根据关系数量计算合适的相机距离
+            const baseDistance = 500;
+            const distancePerRelation = 100;
+            const cameraDistance = baseDistance + (nodeDegree * distancePerRelation);
+            console.log('Calculated camera distance:', cameraDistance);
+            
+            // 获取当前相机位置
+            const camera = window.graph.camera();
+            const startPosition = {
+                x: camera.position.x,
+                y: camera.position.y,
+                z: camera.position.z
+            };
+            
+            // 目标位置
+            const endPosition = {
+                x: node.x,
+                y: node.y,
+                z: node.z + cameraDistance
+            };
+            
+            // 动画持续时间（根据距离调整）
+            const distance = Math.sqrt(
+                Math.pow(endPosition.x - startPosition.x, 2) +
+                Math.pow(endPosition.y - startPosition.y, 2) +
+                Math.pow(endPosition.z - startPosition.z, 2)
+            );
+            const duration = Math.min(2000, Math.max(800, distance * 2));
+            console.log('Animation duration:', duration);
+            
+            // 缓动函数：先快后慢
+            const easeOutCubic = (t) => {
+                return 1 - Math.pow(1 - t, 3);
+            };
+            
+            // 动画开始时间
+            const startTime = Date.now();
+            
+            // 相机动画循环
+            const animateCamera = () => {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const easedProgress = easeOutCubic(progress);
+                
+                // 计算当前相机位置
+                const currentX = startPosition.x + (endPosition.x - startPosition.x) * easedProgress;
+                const currentY = startPosition.y + (endPosition.y - startPosition.y) * easedProgress;
+                const currentZ = startPosition.z + (endPosition.z - startPosition.z) * easedProgress;
+                
+                // 更新相机位置
+                window.graph.cameraPosition({
+                    x: currentX,
+                    y: currentY,
+                    z: currentZ
+                }, 0);
+                
+                // 更新target到节点位置
+                if (controls && typeof THREE !== 'undefined') {
+                    const targetVector = new THREE.Vector3(node.x, node.y, node.z);
+                    controls.target.copy(targetVector);
+                    controls.update();
+                }
+                
+                // 继续动画或结束
+                if (progress < 1) {
+                    requestAnimationFrame(animateCamera);
+                } else {
+                    console.log('Camera animation completed');
+                    console.log('Final camera position:', { x: endPosition.x, y: endPosition.y, z: endPosition.z });
+                    console.log('Final target:', controls ? controls.target : 'N/A');
+                }
+            };
+            
+            // 开始动画
+            requestAnimationFrame(animateCamera);
+            
+            // 显示节点详情面板
+            showNodePanel(node);
+        }
+
+        function showNodePanel(node) {
+            if (!node) return;
+            
+            const panel = document.getElementById('node-panel');
+            const typeConfig = entityTypes[node.type] || { name: node.type, icon: '📌' };
+            
+            document.getElementById('panel-title').textContent = node.name;
+            
+            const relatedLinks = graphData.links.filter(l => {
+                const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
+                const targetId = typeof l.target === 'object' ? l.target.id : l.target;
+                return sourceId === node.id || targetId === node.id;
+            });
+            
+            let html = `<div class="space-y-3"><div class="flex items-center gap-2">
+                        <span class="px-2 py-1 rounded text-xs" style="background: ${node.color}20; color: ${node.color}">${typeConfig.name}</span>
+                        <span class="text-xs text-gray-400">关联记忆: ${node.memoryCount}</span></div>
+                        ${node.summary ? `<p class="text-sm text-gray-600">${node.summary}</p>` : ''}`;
+            
+            if (relatedLinks.length > 0) {
+                html += `<div class="mt-3 pt-3 border-t border-gray-100"><h4 class="text-xs font-semibold text-gray-500 mb-2">相关关系 (${relatedLinks.length})</h4><div class="space-y-2">`;
+                for (const link of relatedLinks.slice(0, 10)) {
+                    const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+                    const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+                    const isSource = sourceId === node.id;
+                    const otherNodeId = isSource ? targetId : sourceId;
+                    const otherNode = graphData.nodes.find(n => String(n.id) === String(otherNodeId));
+                    const relName = relationTypes[link.type] || link.type;
+                    if (otherNode) {
+                        html += `<div class="flex items-center gap-2 text-sm"><span class="text-gray-400">${isSource ? '→' : '←'}</span>
+                                 <span class="relation-tag">${relName}</span>
+                                 <span class="text-gray-700 cursor-pointer hover:text-blue-600" onclick="focusNode('${otherNode.id}')">${otherNode.name}</span></div>`;
+                    }
+                }
+                if (relatedLinks.length > 10) html += `<p class="text-xs text-gray-400">...还有 ${relatedLinks.length - 10} 个关系</p>`;
+                html += `</div></div>`;
+            }
+            html += `</div>`;
+            document.getElementById('panel-content').innerHTML = html;
+            panel.classList.add('show');
+        }
+
+        function zoomIn() {
+            if (!window.graph) return;
+            window.graph.cameraZoom(1.5, 500);
+        }
+
+        function zoomOut() {
+            if (!window.graph) return;
+            window.graph.cameraZoom(0.67, 500);
+        }
+
+        function filterByType(type) {
+            if (!window.graph) return;
+            window.graph.nodeColor(node => node.type === type ? node.color : 'rgba(148, 163, 184, 0.3)')
+                .linkColor(link => {
+                    const s = link.source.type || graphData.nodes.find(n=>n.id===link.source).type;
+                    const t = link.target.type || graphData.nodes.find(n=>n.id===link.target).type;
+                    return (s === type || t === type) ? 'rgba(59, 130, 246, 0.6)' : 'rgba(148, 163, 184, 0.1)';
+                });
+        }
+
+        function resetView() {
+            highlightedNode = null;
+            closePanel();
+            document.getElementById('search-input').value = '';
+            if (window.graph) {
+                window.graph.cameraPosition({ x: 0, y: 500, z: 1000 });
+            }
+        }
+
+        function toggleLabels() {
+            showLabels = !showLabels;
+            if (window.graph) window.graph.nodeColor(node => node.color);
+        }
+
+        let showLinks = true;
+        function toggleLinks() {
+            showLinks = !showLinks;
+            if (window.graph) {
+                window.graph.linkOpacity(showLinks ? 0.3 : 0);
+            }
+        }
+
+        function toggleParams() {
+            const panel = document.getElementById('params-panel');
+            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function toggleControlsHelp() {
+            const panel = document.getElementById('controls-help');
+            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        }
+
+        // ==================== 全能沙盒参数更新 ====================
+
+        function updateGraphParams() {
+            console.log('updateGraphParams called');
+            
+            if (!window.graph) {
+                console.error('window.graph is null or undefined');
+                return; // 绝对防护：防止控制台报错
+            }
+
+            const linkDistance = parseInt(document.getElementById('link-distance').value);
+            const chargeStrength = -parseInt(document.getElementById('charge-strength').value);
+            const nodeSizeScale = parseFloat(document.getElementById('node-size').value);
+            const linkStrength = parseFloat(document.getElementById('link-strength').value);
+            const collisionBuffer = parseInt(document.getElementById('collision-buffer').value);
+            const velocityDecay = parseFloat(document.getElementById('velocity-decay').value);
+            const centerGravity = parseFloat(document.getElementById('center-gravity').value);
+            const labelDistance = parseInt(document.getElementById('label-distance').value);
+
+            console.log('Parameters:', { linkDistance, chargeStrength, nodeSizeScale, linkStrength, collisionBuffer, velocityDecay, centerGravity, labelDistance });
+            document.getElementById('link-distance-val').textContent = linkDistance;
+            document.getElementById('charge-strength-val').textContent = Math.abs(chargeStrength);
+            document.getElementById('node-size-val').textContent = nodeSizeScale.toFixed(1);
+            document.getElementById('link-strength-val').textContent = linkStrength.toFixed(2);
+            document.getElementById('collision-buffer-val').textContent = collisionBuffer;
+            document.getElementById('velocity-decay-val').textContent = velocityDecay.toFixed(2);
+            document.getElementById('center-gravity-val').textContent = centerGravity.toFixed(2);
+            document.getElementById('label-distance-val').textContent = labelDistance;
+
+            graphParams = { linkDistance, chargeStrength, nodeSizeScale, linkStrength, collisionBuffer, velocityDecay, centerGravity, labelDistance };
+
+            const linkForce = window.graph.d3Force('link');
+            console.log('linkForce:', linkForce);
+            if (linkForce) {
+                linkForce.distance(link => {
+                    const sSize = calculateNodeSize(link.source, graphData.degreeMap) * nodeSizeScale;
+                    const tSize = calculateNodeSize(link.target, graphData.degreeMap) * nodeSizeScale;
+                    return sSize + tSize + linkDistance;
+                }).strength(link => linkStrength / link.pairCount); // 智能卸载多重弹簧！
+            }
+
+            const chargeForce = window.graph.d3Force('charge');
+            console.log('chargeForce:', chargeForce);
+            if (chargeForce) chargeForce.strength(chargeStrength);
+
+            const collisionForce = window.graph.d3Force('collide');
+            console.log('collisionForce:', collisionForce);
+            if (collisionForce) {
+                collisionForce.radius(node => calculateNodeSize(node, graphData.degreeMap) * nodeSizeScale + collisionBuffer).iterations(3);
+            }
+
+            window.graph.d3VelocityDecay(velocityDecay);
+            
+            // 确保移除center力，只使用blackhole力
+            window.graph.d3Force('center', null);
+            
+            // 更新3D引力
+            window.graph.d3Force('blackhole3d', alpha => {
+                const blackholeNode = graphData.nodes.find(n => n.id === 'blackhole');
+                if (!blackholeNode) return;
+                
+                const strength = centerGravity * alpha * 60;
+                
+                graphData.nodes.forEach(node => {
+                    if (node.id === 'blackhole') return;
+                    if (node.fx !== undefined && node.fy !== undefined && node.fz !== undefined) return;
+                    
+                    const dx = blackholeNode.x - node.x;
+                    const dy = blackholeNode.y - node.y;
+                    const dz = blackholeNode.z - node.z;
+                    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                    
+                    if (distance > 0) {
+                        node.vx += (dx / distance) * strength;
+                        node.vy += (dy / distance) * strength;
+                        node.vz += (dz / distance) * strength;
+                    }
+                });
+            });
+            
+            // 更新节点大小
+            window.graph.nodeThreeObject(node => {
+                let size;
+                
+                if (node.id === 'blackhole') {
+                    size = 30;
+                } else {
+                    size = calculateNodeSize(node, graphData.degreeMap) * nodeSizeScale;
+                }
+                
+                if (node.id === 'blackhole') {
+                    const blackholeSize = size;
+                    const group = new THREE.Group();
+                    
+                    // 1. 事件视界（Event Horizon）- 纯黑色球体，绝对黑暗
+                    const eventHorizon = new THREE.Mesh(
+                        new THREE.SphereGeometry(blackholeSize, 128, 128),
+                        new THREE.MeshBasicMaterial({ 
+                            color: 0x000000,
+                            transparent: false
+                        })
+                    );
+                    group.add(eventHorizon);
+                    
+                    // 2. 光子球（Photon Sphere）- 光线围绕黑洞旋转的区域
+                    const photonSphere = new THREE.Mesh(
+                        new THREE.SphereGeometry(blackholeSize * 1.5, 64, 64),
+                        new THREE.MeshBasicMaterial({
+                            color: 0xffffff,
+                            transparent: true,
+                            opacity: 0.1,
+                            side: THREE.BackSide,
+                            blending: THREE.AdditiveBlending
+                        })
+                    );
+                    group.add(photonSphere);
+                    
+                    // 3. 主吸积盘 - 使用Canvas创建渐变纹理
+                    const diskCanvas = document.createElement('canvas');
+                    diskCanvas.width = 512;
+                    diskCanvas.height = 512;
+                    const diskCtx = diskCanvas.getContext('2d');
+                    const diskGradient = diskCtx.createRadialGradient(256, 256, 50, 256, 256, 256);
+                    diskGradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+                    diskGradient.addColorStop(0.1, 'rgba(255, 200, 100, 0.8)');
+                    diskGradient.addColorStop(0.3, 'rgba(255, 100, 50, 0.6)');
+                    diskGradient.addColorStop(0.5, 'rgba(200, 50, 100, 0.4)');
+                    diskGradient.addColorStop(0.7, 'rgba(100, 0, 150, 0.2)');
+                    diskGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                    diskCtx.fillStyle = diskGradient;
+                    diskCtx.fillRect(0, 0, 512, 512);
+                    
+                    const diskTexture = new THREE.CanvasTexture(diskCanvas);
+                    const accretionDiskGeometry = new THREE.PlaneGeometry(blackholeSize * 5, blackholeSize * 5);
+                    const accretionDiskMaterial = new THREE.MeshBasicMaterial({
+                        map: diskTexture,
+                        transparent: true,
+                        opacity: 0.9,
+                        side: THREE.DoubleSide,
+                        blending: THREE.AdditiveBlending,
+                        depthWrite: false
+                    });
+                    const accretionDisk = new THREE.Mesh(accretionDiskGeometry, accretionDiskMaterial);
+                    accretionDisk.rotation.x = Math.PI / 2;
+                    group.add(accretionDisk);
+                    
+                    // 4. 吸积盘内圈 - 更热更亮
+                    const innerDiskCanvas = document.createElement('canvas');
+                    innerDiskCanvas.width = 256;
+                    innerDiskCanvas.height = 256;
+                    const innerCtx = innerDiskCanvas.getContext('2d');
+                    const innerGradient = innerCtx.createRadialGradient(128, 128, 20, 128, 128, 128);
+                    innerGradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+                    innerGradient.addColorStop(0.2, 'rgba(255, 220, 150, 0.9)');
+                    innerGradient.addColorStop(0.4, 'rgba(255, 150, 50, 0.7)');
+                    innerGradient.addColorStop(0.6, 'rgba(255, 80, 20, 0.5)');
+                    innerGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                    innerCtx.fillStyle = innerGradient;
+                    innerCtx.fillRect(0, 0, 256, 256);
+                    
+                    const innerTexture = new THREE.CanvasTexture(innerDiskCanvas);
+                    const innerDiskGeometry = new THREE.PlaneGeometry(blackholeSize * 2.5, blackholeSize * 2.5);
+                    const innerDiskMaterial = new THREE.MeshBasicMaterial({
+                        map: innerTexture,
+                        transparent: true,
+                        opacity: 1,
+                        side: THREE.DoubleSide,
+                        blending: THREE.AdditiveBlending,
+                        depthWrite: false
+                    });
+                    const innerDisk = new THREE.Mesh(innerDiskGeometry, innerDiskMaterial);
+                    innerDisk.rotation.x = Math.PI / 2;
+                    group.add(innerDisk);
+                    
+                    // 5. 引力透镜光环（爱因斯坦环）
+                    const lensRingGeometry = new THREE.TorusGeometry(
+                        blackholeSize * 2.8, 
+                        blackholeSize * 0.15, 
+                        32, 
+                        128
+                    );
+                    const lensRingMaterial = new THREE.MeshBasicMaterial({
+                        color: 0x88ccff,
+                        transparent: true,
+                        opacity: 0.6,
+                        blending: THREE.AdditiveBlending
+                    });
+                    const lensRing = new THREE.Mesh(lensRingGeometry, lensRingMaterial);
+                    lensRing.rotation.x = Math.PI / 2;
+                    group.add(lensRing);
+                    
+                    // 6. 内部发光环 - 吸积盘最内层
+                    const innerGlowGeometry = new THREE.RingGeometry(
+                        blackholeSize * 1.01,
+                        blackholeSize * 1.15,
+                        64
+                    );
+                    const innerGlowMaterial = new THREE.MeshBasicMaterial({
+                        color: 0xffaa00,
+                        transparent: true,
+                        opacity: 0.9,
+                        side: THREE.DoubleSide,
+                        blending: THREE.AdditiveBlending
+                    });
+                    const innerGlow = new THREE.Mesh(innerGlowGeometry, innerGlowMaterial);
+                    innerGlow.rotation.x = Math.PI / 2;
+                    group.add(innerGlow);
+                    
+                    return group;
+                } else {
+                    const group = new THREE.Group();
+                    
+                    const sphere = new THREE.Mesh(
+                        new THREE.SphereGeometry(size, 32, 32),
+                        new THREE.MeshBasicMaterial({ color: node.color })
+                    );
+                    group.add(sphere);
+                    
+                    const labelGroup = createNodeLabel(node.name, {
+                        fontSize: 28,
+                        textColor: '#ffffff',
+                        outlineColor: '#000000',
+                        sphereRadius: size
+                    });
+                    labelGroup.userData.isLabel = true;
+                    labelGroup.userData.nodeId = node.id;
+                    labelGroup.userData.nodeSize = size;
+                    group.add(labelGroup);
+                    
+                    group.userData.nodeId = node.id;
+                    
+                    return group;
+                }
+            });
+            
+            window.graph.d3ReheatSimulation();
+            
+            console.log('Graph parameters updated successfully');
+        }
+
+        function showError(message) {
+            document.getElementById('loading').innerHTML = `
+                <div class="text-center"><span class="text-4xl mb-4">❌</span><p class="text-red-600">${message}</p>
+                <button onclick="location.reload()" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg">重试</button></div>`;
+        }
+
+        document.addEventListener('DOMContentLoaded', loadGraph);
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+# Memory Bank - 依赖
+
+# 核心依赖（无外部依赖，使用 Python 标准库）
+
+# 测试依赖
+pytest>=7.0.0
+
+# 可选：嵌入模型支持
+# sentence-transformers>=2.2.0
+# torch>=2.0.0

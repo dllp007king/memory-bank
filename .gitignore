@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+
+# Memory Bank
+.memory/
+logs/
+
+# Large files
+wangpan/
+backups/
+*.zip
+*.rar
+*.7z
+*.tar.gz
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+
+# Additional exclusions
+.claude/
+web/venv/
+tests/

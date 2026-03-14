@@ -1,0 +1,14 @@
+{
+  "name": "memory-bank-web",
+  "version": "1.0.0",
+  "description": "Memory Bank Web UI - Tailwind CSS Production Build",
+  "scripts": {
+    "build:css": "tailwindcss -i src/input.css -o static/css/output.css --minify",
+    "watch:css": "tailwindcss -i src/input.css -o static/css/output.css --watch"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.14"
+  }
+}

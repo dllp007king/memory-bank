@@ -1,0 +1,2713 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memory Bank - 记忆库管理</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- CodeMirror for JSON editor -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/selection/active-line.min.js"></script>
+    <style>
+        /* 自定义渐变背景 */
+        body {
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 50%, #f5f3ff 100%);
+            min-height: 100vh;
+        }
+        
+        /* 卡片样式增强 */
+        .card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            transition: all 0.3s ease;
+        }
+
+        .card:hover {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            transform: translateY(-2px);
+        }
+
+        /* 模态框修复 - 防止闪烁和渲染问题 */
+        #cleanup-modal, #distill-modal {
+            will-change: opacity;
+            -webkit-transform: translateZ(0);
+            transform: translateZ(0);
+        }
+
+        #cleanup-modal.flex, #distill-modal.flex {
+            display: flex !important;
+        }
+
+        #cleanup-modal > div, #distill-modal > div {
+            max-height: 85vh;
+            -webkit-overflow-scrolling: touch;
+        }
+        
+        /* 导航栏渐变 */
+        .navbar {
+            background: linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%);
+            box-shadow: 0 4px 6px -1px rgba(30, 64, 175, 0.3);
+        }
+        
+        /* 按钮渐变 */
+        .btn-primary {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+            transition: all 0.3s ease;
+        }
+        
+        .btn-success:hover {
+            background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(22, 197, 94, 0.4);
+        }
+        
+        .btn-danger {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            transition: all 0.3s ease;
+        }
+        
+        .btn-danger:hover {
+            background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+        }
+        
+        /* 表格样式 */
+        .data-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+        
+        .data-table thead th {
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        .data-table tbody tr {
+            transition: all 0.2s ease;
+        }
+        
+        .data-table tbody tr:hover {
+            background: linear-gradient(90deg, #f0f9ff 0%, #e0f2fe 100%);
+        }
+        
+        .data-table tbody tr:nth-child(even) {
+            background: #fafbfc;
+        }
+        
+        .data-table tbody tr:nth-child(even):hover {
+            background: linear-gradient(90deg, #f0f9ff 0%, #e0f2fe 100%);
+        }
+        
+        /* 加载动画 */
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #e5e7eb;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .animate-fade-in {
+            animation: fadeIn 0.3s ease-out;
+        }
+        
+        /* 标签切换动画 */
+        .tab-btn-active {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: white;
+            border-radius: 8px 8px 0 0;
+        }
+        
+        /* 实体标签 */
+        .entity-tag {
+            display: inline-block;
+            padding: 2px 10px;
+            margin: 2px;
+            border-radius: 20px;
+            font-size: 12px;
+            background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
+            color: #0369a1;
+            transition: all 0.2s ease;
+        }
+        
+        .entity-tag:hover {
+            background: linear-gradient(135deg, #bae6fd 0%, #7dd3fc 100%);
+            transform: scale(1.05);
+        }
+        
+        /* 类型标签 */
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(0.95); }
+        }
+        
+        /* 统计数字动画 */
+        .stat-number {
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        /* 输入框聚焦效果 */
+        .input-focus {
+            transition: all 0.3s ease;
+        }
+        
+        .input-focus:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+            transform: translateY(-1px);
+        }
+        
+        /* 筛选按钮 */
+        
+        
+        
+        /* 响应式优化 */
+        @media (max-width: 768px) {
+            .card {
+                border-radius: 12px;
+            }
+            
+            .navbar h1 {
+                font-size: 1.1rem;
+            }
+        }
+        
+        /* 滚动条美化 */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: linear-gradient(135deg, #94a3b8 0%, #64748b 100%);
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+        }
+
+        /* CodeMirror 自定义样式 */
+        .json-editor-container .CodeMirror {
+            height: 400px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            border-radius: 0 0 12px 12px;
+        }
+
+        .json-editor-container .CodeMirror-gutters {
+            border-right: 1px solid #e5e7eb;
+        }
+
+        .json-editor-container .CodeMirror-linenumber {
+            color: #9ca3af;
+            padding: 0 8px;
+        }
+
+        .json-editor-container .cm-property {
+            color: #059669;
+        }
+
+        .json-editor-container .cm-string {
+            color: #0ea5e9;
+        }
+
+        .json-editor-container .cm-number {
+            color: #7c3aed;
+        }
+
+        .json-editor-container .cm-atom {
+            color: #dc2626;
+        }
+
+        .json-editor-container .cm-keyword {
+            color: #2563eb;
+        }
+
+        /* 验证状态样式 */
+        .validation-success {
+            background: #dcfce7;
+            color: #166534;
+            border: 1px solid #86efac;
+        }
+
+        .validation-error {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fca5a5;
+        }
+
+        /* 工具栏按钮样式 */
+        .toolbar-btn {
+            transition: all 0.2s ease;
+        }
+
+        .toolbar-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 min-h-screen">
+    <!-- 导航栏 -->
+    <nav class="navbar text-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <span class="text-3xl">🧠</span>
+                    <div>
+                        <h1 class="text-xl font-bold">Memory Bank</h1>
+                        <p class="text-xs text-blue-200">智能记忆管理系统</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <span id="server-info" class="text-xs text-blue-200 bg-white/10 px-3 py-1 rounded-full">连接中...</span>
+                    <a href="/graph" class="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg transition flex items-center gap-2" title="知识图谱可视化">
+                        <span>🕸️</span>
+                        <span class="hidden sm:inline">图谱</span>
+                    </a>
+                    <a href="/config" class="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg transition flex items-center gap-2" title="参数配置">
+                        <span>⚙️</span>
+                        <span class="hidden sm:inline">配置</span>
+                    </a>
+                    <button onclick="loadAll()" class="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg transition flex items-center gap-2">
+                        <span>🔄</span>
+                        <span class="hidden sm:inline">刷新</span>
+                    </button>
+                    <button onclick="showPendingFixes()" class="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg transition flex items-center gap-2 relative" title="待修正的关系">
+                        <span>⚠️</span>
+                        <span class="hidden sm:inline">修正</span>
+                        <span id="fix-badge" class="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center hidden">0</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <script>
+    // 更新修正徽章
+    function updateFixBadge() {
+        const pendingFixes = JSON.parse(localStorage.getItem('pendingRelationFixes') || '[]');
+        const badge = document.getElementById('fix-badge');
+        if (pendingFixes.length > 0) {
+            badge.textContent = pendingFixes.length;
+            badge.classList.remove('hidden');
+        } else {
+            badge.classList.add('hidden');
+        }
+    }
+    
+    // 显示待修正列表
+    function showPendingFixes() {
+        const pendingFixes = JSON.parse(localStorage.getItem('pendingRelationFixes') || '[]');
+        if (pendingFixes.length === 0) {
+            showToast('没有待修正的数据', 'success');
+            return;
+        }
+        // 显示第一个待修正的
+        showRelationFixModal(pendingFixes[0].errorRelations, null, pendingFixes[0]);
+    }
+    
+    // 页面加载时更新徽章
+    document.addEventListener("DOMContentLoaded", function() {
+        updateFixBadge();
+    });
+    </script>
+
+    <!-- 关系修正模态框 -->
+    <div id="relation-fix-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl mx-4 max-h-[90vh] overflow-hidden">
+            <div class="bg-yellow-50 px-6 py-4 border-b border-yellow-200">
+                <h3 class="text-lg font-semibold text-yellow-800">⚠️ 关系需要修正</h3>
+                <p class="text-sm text-yellow-700 mt-1">关系中的实体不在定义的 entities 列表中，请修正后重新导入</p>
+            </div>
+            
+            <!-- 修正说明 -->
+            <div class="bg-blue-50 px-6 py-3 border-b border-blue-100">
+                <h4 class="font-semibold text-blue-800 mb-2">📋 判断规则</h4>
+                <ul class="text-sm text-blue-700 space-y-1">
+                    <li>• <strong>实体列表</strong>：JSON 中 <code>entities</code> 数组定义的所有实体</li>
+                    <li>• <strong>关系格式</strong>：<code>"源实体|关系类型|目标实体"</code></li>
+                    <li>• <strong>规则</strong>：关系中的源实体和目标实体都必须在 entities 列表中定义</li>
+                    <li>• <strong>示例</strong>：如果关系是 <code>"sun|开发|支付网关"</code>，则 entities 中必须包含 <code>sun</code> 和 <code>支付网关</code></li>
+                </ul>
+            </div>
+            
+            <!-- 正确示例 -->
+            <div class="bg-green-50 px-6 py-3 border-b border-green-100">
+                <h4 class="font-semibold text-green-800 mb-2">✅ 正确 JSON 示例</h4>
+                <pre class="text-xs bg-white p-3 rounded border overflow-x-auto">{
+  "content": "...",
+  "entities": [
+    {"name": "sun", "type": "PERSON(人物)"},
+    {"name": "支付网关", "type": "PROJECT(项目)"}
+  ],
+  "relations": [
+    "sun|开发|支付网关"
+  ]
+}</pre>
+            </div>
+            
+            <!-- 修正区域 -->
+            <div class="p-6 overflow-y-auto max-h-96">
+                <div id="relation-fix-list"></div>
+            </div>
+            
+            <!-- 底部按钮 -->
+            <div class="px-6 py-4 bg-gray-50 flex justify-between">
+                <button onclick="clearAllPendingFixes()" class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 text-gray-600">清空全部</button>
+                <div class="flex gap-3">
+                    <button onclick="closeRelationFixModal()" class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100">取消</button>
+                    <button id="fix-submit-btn" onclick="submitRelationFix()" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">检查并导入</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+        <!-- 数据库说明 -->
+        <section class="card p-5 fade-in">
+            <h3 class="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                <span class="text-xl">📖</span> 数据库结构说明
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600">
+                <div class="bg-gradient-to-r from-blue-50 to-transparent p-4 rounded-xl">
+                    <strong class="text-blue-700">事实 (Facts)</strong>: 存储具体信息和事件
+                    <div class="mt-2 text-xs text-gray-500">
+                        包含内容、实体、关系、置信度
+                    </div>
+                </div>
+                <div class="bg-gradient-to-r from-green-50 to-transparent p-4 rounded-xl">
+                    <strong class="text-green-700">实体 (Entities)</strong>: 人物、工具、系统等对象
+                    <div class="mt-2 flex flex-wrap gap-1">
+                        <span class="px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-xs">PERSON=人物</span>
+                        <span class="px-2 py-0.5 rounded bg-green-100 text-green-800 text-xs">TOOL=工具</span>
+                        <span class="px-2 py-0.5 rounded bg-purple-100 text-purple-800 text-xs">PROJECT=项目</span>
+                    </div>
+                </div>
+                <div class="bg-gradient-to-r from-purple-50 to-transparent p-4 rounded-xl">
+                    <strong class="text-purple-700">关系</strong>: 事实与实体多对多关联
+                    <p class="mt-2 text-xs text-gray-500">一条事实可关联多个实体，支持按实体检索</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 仪表盘区域 -->
+        <section class="fade-in" style="animation-delay: 0.1s;">
+            <h2 class="text-lg font-semibold text-gray-700 mb-4 flex items-center gap-2">
+                <span class="text-xl">📊</span> 仪表盘
+            </h2>
+            <div class="grid grid-cols-2 md:grid-cols-6 gap-4">
+                <!-- 事实总数 -->
+                <div class="card p-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-gray-500">事实总数</p>
+                            <p id="facts-count" class="text-3xl font-bold stat-number">-</p>
+                        </div>
+                        <div class="text-4xl opacity-50">📝</div>
+                    </div>
+                </div>
+                
+                <!-- 实体总数 -->
+                <div class="card p-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-gray-500">实体总数</p>
+                            <p id="entities-count" class="text-3xl font-bold text-green-600">-</p>
+                        </div>
+                        <div class="text-4xl opacity-50">👤</div>
+                    </div>
+                </div>
+                
+                <!-- 向量覆盖率 -->
+                <div class="card p-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-gray-500">向量覆盖率</p>
+                            <p id="vectors-coverage" class="text-3xl font-bold text-purple-600">-</p>
+                        </div>
+                        <div class="text-4xl opacity-50">🔢</div>
+                    </div>
+                </div>
+                
+                <!-- 关系数 -->
+                <div class="card p-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-gray-500">关系数</p>
+                            <p id="relations-count" class="text-3xl font-bold text-orange-600">-</p>
+                            <p id="relations-types-list" class="text-xs text-gray-400 mt-1 truncate max-w-[150px]">-</p>
+                        </div>
+                        <div class="text-4xl opacity-50">🔗</div>
+                    </div>
+                </div>
+                
+                <!-- 嵌入服务状态 -->
+                <div class="card p-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-gray-500">嵌入服务</p>
+                            <p id="embedding-status" class="text-lg font-bold flex items-center gap-2">
+                                <span id="status-dot" class="status-dot bg-gray-400"></span>
+                                <span id="status-text">检测中...</span>
+                            </p>
+                            <p id="model-name" class="text-xs text-gray-400 mt-1">-</p>
+                        </div>
+                        <div class="text-4xl opacity-50">⚡</div>
+                    </div>
+                </div>
+                
+                <!-- 生命周期状态分布 -->
+                <div class="card p-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-gray-500">生命周期状态</p>
+                            <div id="lifecycle-stats" class="flex gap-1 mt-1">
+                                <span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium" title="活跃">A: <span id="stat-active">-</span></span>
+                                <span class="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs font-medium" title="归档">Ar: <span id="stat-archived">-</span></span>
+                                <span class="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs font-medium" title="取代">S: <span id="stat-superseded">-</span></span>
+                                <span class="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-medium" title="遗忘">F: <span id="stat-forgotten">-</span></span>
+                            </div>
+                        </div>
+                        <div class="text-4xl opacity-50">🔄</div>
+                    </div>
+                </div>
+                
+                <!-- 平均有效置信度 -->
+                <div class="card p-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-gray-500">有效置信度</p>
+                            <p id="avg-effective-confidence" class="text-3xl font-bold text-indigo-600">-</p>
+                            <div class="w-24 h-1 bg-gray-200 rounded mt-1">
+                                <div id="confidence-bar" class="h-1 bg-indigo-500 rounded transition-all" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        <div class="text-4xl opacity-50">📈</div>
+                    </div>
+                </div>
+                
+                <!-- 待清理候选 -->
+                <div class="card p-4 cursor-pointer hover:bg-red-50 transition" onclick="showCleanupCandidates()">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-gray-500">待清理</p>
+                            <p id="cleanup-count" class="text-3xl font-bold text-red-600">-</p>
+                            <p class="text-xs text-gray-400 mt-1">点击查看详情</p>
+                        </div>
+                        <div class="text-4xl opacity-50">🗑️</div>
+                    </div>
+                </div>
+                
+                <!-- 待提炼候选 -->
+                <div class="card p-4 cursor-pointer hover:bg-blue-50 transition" onclick="showDistillCandidates()">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm text-gray-500">待提炼</p>
+                            <p id="distill-count" class="text-3xl font-bold text-blue-600">-</p>
+                            <p class="text-xs text-gray-400 mt-1">点击查看详情</p>
+                        </div>
+                        <div class="text-4xl opacity-50">💎</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 搜索区域 -->
+        <section class="card p-5 fade-in" style="animation-delay: 0.2s;">
+            <h2 class="text-lg font-semibold text-gray-700 mb-4 flex items-center gap-2">
+                <span class="text-xl">🔍</span> 智能搜索
+            </h2>
+            <div class="flex flex-wrap gap-3 mb-4">
+                <div class="flex-1 min-w-64">
+                    <input type="text" id="search-input"
+                        class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100 transition-all input-focus"
+                        placeholder="输入搜索关键词...">
+                </div>
+
+                <button onclick="doSearch()"
+                    class="btn-primary text-white px-8 py-3 rounded-xl font-medium flex items-center gap-2">
+                    <span>🔍</span> 搜索
+                </button>
+            </div>
+            
+            <!-- 搜索结果 -->
+            <div id="search-results" class="hidden mt-4 fade-in">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-sm font-medium text-gray-600 bg-blue-50 px-4 py-2 rounded-lg">
+                        🎯 搜索结果 (<span id="search-count">0</span>)
+                    </h3>
+                    <button onclick="clearSearch()" class="text-sm text-gray-500 hover:text-gray-700 px-3 py-1 hover:bg-gray-100 rounded-lg transition">清除 ✕</button>
+                </div>
+                <div id="search-list" class="space-y-3 max-h-96 overflow-y-auto pr-2"></div>
+            </div>
+        </section>
+
+        <!-- 添加事实区域 -->
+        <section class="card p-5 fade-in" style="animation-delay: 0.3s;">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-lg font-semibold text-gray-700 flex items-center gap-2">
+                    <span class="text-xl">➕</span> 添加事实
+                </h2>
+                <div class="flex gap-2">
+                    <button onclick="toggleInputMode('simple')"
+                        id="mode-simple-btn"
+                        class="px-3 py-1 text-sm rounded-lg transition bg-blue-500 text-white">
+                        简单模式
+                    </button>
+                    <button onclick="toggleInputMode('json')"
+                        id="mode-json-btn"
+                        class="px-3 py-1 text-sm rounded-lg transition text-gray-500 hover:bg-gray-100">
+                        JSON 模式
+                    </button>
+                </div>
+            </div>
+
+            <!-- 简单模式 (原有输入框) -->
+            <div id="simple-input-mode" class="flex flex-wrap gap-3 items-center">
+                <input type="text" id="new-fact-input"
+                    class="flex-1 min-w-80 border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100 transition-all input-focus text-base"
+                    placeholder="输入内容，自动提取实体并存入记忆库..."
+                    onkeypress="if(event.key==='Enter')addFactSimple()">
+                <button onclick="addFactSimple()"
+                    class="btn-primary text-white px-8 py-3 rounded-xl font-medium flex items-center gap-2">
+                    <span>✨</span> 添加
+                </button>
+            </div>
+
+            <!-- JSON 模式 -->
+            <div id="json-input-mode" class="hidden">
+                <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+                    <!-- JSON 编辑器 -->
+                    <div class="lg:col-span-3">
+                        <div class="border-2 border-gray-200 rounded-xl overflow-hidden focus-within:border-blue-400 transition-all">
+                            <!-- 工具栏 -->
+                            <div class="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center justify-between">
+                                <span class="text-xs font-medium text-gray-500">JSON 编辑器</span>
+                                <div class="flex gap-2">
+                                    <button onclick="formatJson()"
+                                        class="toolbar-btn text-xs px-2 py-1 rounded bg-white border border-gray-300 hover:bg-gray-100 transition">
+                                        格式化
+                                    </button>
+                                    <button onclick="validateJson()"
+                                        class="toolbar-btn text-xs px-2 py-1 rounded bg-white border border-gray-300 hover:bg-gray-100 transition">
+                                        验证
+                                    </button>
+                                    <button onclick="loadTemplate('minimal')"
+                                        class="toolbar-btn text-xs px-2 py-1 rounded bg-white border border-gray-300 hover:bg-gray-100 transition">
+                                        最简模板
+                                    </button>
+                                    <button onclick="loadTemplate('full')"
+                                        class="toolbar-btn text-xs px-2 py-1 rounded bg-white border border-gray-300 hover:bg-gray-100 transition">
+                                        完整模板
+                                    </button>
+                                </div>
+                            </div>
+                            <!-- CodeMirror 容器 -->
+                            <div id="json-editor" class="json-editor-container bg-white"></div>
+                        </div>
+                    </div>
+
+                    <!-- 格式说明 -->
+                    <div class="lg:col-span-2">
+                        <div class="bg-gradient-to-br from-blue-50 to-purple-50 rounded-xl p-4 h-full overflow-y-auto" style="max-height: 450px;">
+                            <h3 class="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                                <span>📋</span> JSON 格式说明
+                            </h3>
+
+                            <!-- 必填字段 -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-medium text-gray-700 mb-2 flex items-center gap-1">
+                                    <span class="text-red-500">*</span> 必填字段
+                                </h4>
+                                <div class="bg-white rounded-lg p-3 text-xs">
+                                    <code class="text-blue-600">content</code>: 事实内容
+                                </div>
+                            </div>
+
+                            <!-- 可选字段 -->
+                            <div class="mb-4">
+                                <h4 class="text-sm font-medium text-gray-700 mb-2">可选字段</h4>
+                                <div class="bg-white rounded-lg p-3 space-y-2 text-xs">
+                                    <div>
+                                        <code class="text-blue-600">entities</code>: 实体列表
+                                        <pre class="mt-1 text-gray-500 bg-gray-50 p-2 rounded">["实体1", "实体2"]
+或
+[{"name": "实体", "type": "PERSON"}]</pre>
+                                    </div>
+                                    <div>
+                                        <code class="text-blue-600">relations</code>: 关系列表
+                                        <pre class="mt-1 text-gray-500 bg-gray-50 p-2 rounded">["源|关系|目标"]</pre>
+                                    </div>
+                                    <div>
+                                        <code class="text-blue-600">confidence</code>: 置信度 (0.0-1.0)
+                                    </div>
+                                    <div>
+                                        <code class="text-blue-600">importance</code>: 重要性 (0.0-1.0)
+                                    </div>
+                                    <div>
+                                        <code class="text-blue-600">tags</code>: 标签数组
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 示例 -->
+                            <div>
+                                <h4 class="text-sm font-medium text-gray-700 mb-2">示例</h4>
+                                <pre class="text-xs bg-white p-3 rounded border overflow-x-auto">{
+  "content": "sun使用支付网关完成了支付",
+  "entities": [
+    {"name": "sun", "type": "PERSON"},
+    {"name": "支付网关", "type": "PROJECT"}
+  ],
+  "relations": [
+    "sun|使用|支付网关"
+  ],
+  "confidence": 0.9,
+  "importance": 0.5,
+  "tags": ["支付"]
+}</pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 操作按钮 -->
+                <div class="flex items-center gap-3 mt-4">
+                    <button onclick="addFactFromJson()"
+                        class="btn-primary text-white px-8 py-3 rounded-xl font-medium flex items-center gap-2">
+                        <span>✨</span> 添加
+                    </button>
+                    <div id="json-result" class="flex-1 text-sm"></div>
+                </div>
+            </div>
+
+            <!-- 验证结果提示 -->
+            <div id="json-validation" class="hidden mt-3 text-sm rounded-lg px-4 py-3"></div>
+        </section>
+
+        <!-- 数据列表 -->
+        <section class="card p-5 fade-in" style="animation-delay: 0.4s;">
+            <h2 class="text-lg font-semibold text-gray-700 mb-4 flex items-center gap-2">
+                <span class="text-xl">📋</span> 数据列表
+            </h2>
+            
+            <!-- 标签切换 -->
+            <div class="flex gap-2 border-b border-gray-200 pb-2 mb-4">
+                <button onclick="switchDataTab('facts')" id="tab-facts"
+                    class="px-5 py-2.5 text-sm font-medium rounded-t-lg transition bg-blue-500 text-white">
+                    📝 事实列表
+                </button>
+                <button onclick="switchDataTab('entities')" id="tab-entities"
+                    class="px-5 py-2.5 text-sm font-medium rounded-t-lg transition text-gray-500 hover:text-gray-700 hover:bg-gray-100">
+                    👥 实体列表
+                </button>
+                <button onclick="switchDataTab('relations')" id="tab-relations"
+                    class="px-5 py-2.5 text-sm font-medium rounded-t-lg transition text-gray-500 hover:text-gray-700 hover:bg-gray-100">
+                    🔗 关系列表
+                </button>
+            </div>
+            
+            <!-- 事实列表 -->
+            <div id="facts-panel">
+                <!-- 批量操作 -->
+                <div class="flex items-center gap-4 mb-4 p-3 bg-gradient-to-r from-gray-50 to-blue-50 rounded-xl">
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" id="select-all-facts" onchange="toggleSelectAllFacts()" class="w-5 h-5 rounded text-blue-500 focus:ring-blue-500">
+                        <label for="select-all-facts" class="text-sm text-gray-600">全选</label>
+                    </div>
+                    <button onclick="deleteSelectedFacts()" class="btn-danger text-white px-4 py-2 rounded-lg text-sm ml-auto flex items-center gap-1">
+                        🗑️ 批量删除
+                    </button>
+                    <span id="selected-count" class="text-xs text-gray-500 bg-white px-3 py-1 rounded-full">已选 0</span>
+                </div>
+                
+                <!-- 事实表格 -->
+                <div class="overflow-auto rounded-xl border border-gray-200" style="max-height: 500px;">
+                    <table class="data-table text-sm">
+                        <thead class="bg-gradient-to-r from-slate-50 to-blue-50">
+                            <tr>
+                                <th class="text-left px-4 py-3 w-10">☑</th>
+                                <th class="text-left px-4 py-3">内容</th>
+                                <th class="text-left px-4 py-3 w-28">时间</th>
+                                <th class="text-left px-4 py-3 w-36">实体</th>
+                                <th class="text-left px-4 py-3 w-28">生命周期</th>
+                                <th class="text-center px-4 py-3 w-16">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="facts-table" class="divide-y divide-gray-100">
+                            <tr><td colspan="7" class="text-center py-8 text-gray-400">
+                                <div class="flex flex-col items-center gap-2">
+                                    <div class="loading-spinner"></div>
+                                    <span>加载中...</span>
+                                </div>
+                            </td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- 分页 -->
+                <div class="flex justify-between items-center mt-4">
+                    <span id="facts-info" class="text-sm text-gray-500">共 0 条</span>
+                    <div class="flex gap-2">
+                        <button onclick="prevPage()" id="prev-btn" class="px-4 py-2 border-2 border-gray-200 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition" disabled>◀ 上一页</button>
+                        <button onclick="nextPage()" id="next-btn" class="px-4 py-2 border-2 border-gray-200 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition" disabled>下一页 ▶</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 实体列表 -->
+            <div id="entities-panel" class="hidden">
+                <!-- 批量操作 -->
+                <div class="flex items-center gap-4 mb-4 p-3 bg-gradient-to-r from-gray-50 to-green-50 rounded-xl">
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" id="select-all-entities" onchange="toggleSelectAllEntities()" class="w-5 h-5 rounded text-green-500 focus:ring-green-500">
+                        <label for="select-all-entities" class="text-sm text-gray-600">全选</label>
+                    </div>
+                    <button onclick="deleteSelectedEntities()" class="btn-danger text-white px-4 py-2 rounded-lg text-sm ml-auto flex items-center gap-1">
+                        🗑️ 批量删除
+                    </button>
+                    <span id="selected-entity-count" class="text-xs text-gray-500 bg-white px-3 py-1 rounded-full">已选 0</span>
+                </div>
+                
+                <!-- 实体表格 -->
+                <div class="overflow-auto rounded-xl border border-gray-200" style="max-height: 500px;">
+                    <table class="data-table text-sm">
+                        <thead class="bg-gradient-to-r from-slate-50 to-green-50">
+                            <tr>
+                                <th class="text-left px-4 py-3 w-10">☑</th>
+                                <th class="text-left px-4 py-3">实体名</th>
+                                <th class="text-left px-4 py-3 w-20">Slug</th>
+                                <th class="text-left px-4 py-3 w-24">类型</th>
+                                <th class="text-center px-4 py-3 w-20">关联事实</th>
+                                <th class="text-left px-4 py-3 w-32">首次出现</th>
+                                <th class="text-center px-4 py-3 w-16">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="entities-table" class="divide-y divide-gray-100">
+                            <tr><td colspan="7" class="text-center py-8 text-gray-400">
+                                <div class="flex flex-col items-center gap-2">
+                                    <div class="loading-spinner"></div>
+                                    <span>加载中...</span>
+                                </div>
+                            </td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 分页控件 -->
+                <div id="entities-pagination" class="flex items-center justify-between mt-4 px-2">
+                    <div class="text-sm text-gray-500">
+                        共 <span id="entities-total">0</span> 个实体
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="prevEntitiesPage()" id="entities-prev-btn"
+                            class="px-3 py-1 text-sm border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                            上一页
+                        </button>
+                        <span class="text-sm text-gray-600">
+                            第 <span id="entities-current-page">1</span> / <span id="entities-total-pages">1</span> 页
+                        </span>
+                        <button onclick="nextEntitiesPage()" id="entities-next-btn"
+                            class="px-3 py-1 text-sm border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                            下一页
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 关系列表 -->
+            <div id="relations-panel" class="hidden">
+                <!-- 统计信息 -->
+                <div class="flex items-center gap-4 mb-4 p-3 bg-gradient-to-r from-gray-50 to-purple-50 rounded-xl">
+                    <span class="text-sm text-gray-600">💡 关系连接实体，形成知识图谱</span>
+                    <span id="relations-stats" class="text-xs text-gray-500 bg-white px-3 py-1 rounded-full ml-auto">加载中...</span>
+                </div>
+                
+                <!-- 关系列表工具栏 -->
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" id="select-all-relations" class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
+                        <label for="select-all-relations" class="text-sm text-gray-600 cursor-pointer">全选</label>
+                    </div>
+                    <button onclick="deleteSelectedRelations()" id="batch-delete-relations-btn"
+                            class="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                            disabled>
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                        </svg>
+                        删除选中 (<span id="selected-relations-count">0</span>)
+                    </button>
+                    <span class="text-sm text-gray-500 ml-auto">已选中 <span id="selected-relations-total">0</span> 条关系</span>
+                </div>
+
+                <!-- 关系表格 -->
+                <div class="overflow-auto rounded-xl border border-gray-200" style="max-height: 550px;">
+                    <table class="data-table text-sm">
+                        <thead class="bg-gradient-to-r from-slate-50 to-purple-50">
+                            <tr>
+                                <th class="text-left px-4 py-3 w-10">选择</th>
+                                <th class="text-left px-4 py-3">源实体</th>
+                                <th class="text-center px-4 py-3 w-24">关系类型</th>
+                                <th class="text-left px-4 py-3">目标实体</th>
+                                <th class="text-center px-4 py-3 w-20">置信度</th>
+                                <th class="text-left px-4 py-3 w-32">创建时间</th>
+                                <th class="text-center px-4 py-3 w-20">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="relations-table" class="divide-y divide-gray-100">
+                            <tr><td colspan="7" class="text-center py-8 text-gray-400">
+                                <div class="flex flex-col items-center gap-2">
+                                    <div class="loading-spinner"></div>
+                                    <span>加载中...</span>
+                                </div>
+                            </td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+    </div>
+
+    <!-- 页脚 -->
+    <footer class="text-center py-6 text-gray-400 text-sm">
+        <p>Memory Bank © 2026 | 智能记忆管理系统</p>
+    </footer>
+
+    <script>
+        // 全局状态
+        let currentOffset = 0;
+        let currentLimit = 20;
+        let totalFacts = 0;
+        let allEntities = [];
+
+        // 嵌入模型信息（从 API 获取）
+        let embeddingModel = '未知';
+        let embeddingDim = 0;
+
+        // Toast 通知系统
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container') || createToastContainer();
+            const toast = document.createElement('div');
+            
+            const colors = {
+                'success': 'bg-green-500',
+                'error': 'bg-red-500',
+                'warning': 'bg-yellow-500',
+                'info': 'bg-blue-500'
+            };
+            
+            const icons = {
+                'success': '✅',
+                'error': '❌',
+                'warning': '⚠️',
+                'info': 'ℹ️'
+            };
+            
+            toast.className = `${colors[type]} text-white px-4 py-3 rounded-xl shadow-lg flex items-center gap-2 animate-fade-in`;
+            toast.innerHTML = `<span>${icons[type]}</span><span>${message}</span>`;
+            
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(-10px)';
+                toast.style.transition = 'all 0.3s ease';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        function createToastContainer() {
+            const container = document.createElement('div');
+            container.id = 'toast-container';
+            container.className = 'fixed top-4 right-4 z-50 space-y-2';
+            document.body.appendChild(container);
+            return container;
+        }
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            loadAll();
+            
+            // 回车搜索
+            document.getElementById('search-input').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') doSearch();
+            });
+        });
+
+        // 加载所有数据
+        function loadAll() {
+            console.log('刷新数据...');
+            loadStatus();
+            loadFacts();
+            loadEntities();
+            // 显示刷新动画
+            const btn = document.querySelector('button[onclick="loadAll()"] span');
+            if (btn) {
+                btn.textContent = '⏳';
+                setTimeout(() => btn.textContent = '🔄', 500);
+            }
+        }
+
+        // 加载状态（带重试）
+        async function loadStatus(retry = 3) {
+            try {
+                const res = await fetch('/api/status');
+                const json = await res.json();
+                
+                if (json.success) {
+                    const data = json.data;
+                    
+                    // 更新统计
+                    document.getElementById('facts-count').textContent = data.facts_count;
+                    document.getElementById('entities-count').textContent = data.entities_count;
+                    document.getElementById('vectors-coverage').textContent =
+                        `${data.vectors_count}/${data.facts_count}`;
+
+                    // 更新关系数
+                    if (data.relations_count !== undefined) {
+                        document.getElementById('relations-count').textContent = data.relations_count;
+                        document.getElementById('relations-types-list').textContent =
+                            `共 ${data.relations_count} 条关系`;
+                    } else {
+                        // 兼容旧版 API
+                        updateRelationsCount();
+                    }
+
+                    // 更新嵌入服务状态
+                    const dot = document.getElementById('status-dot');
+                    const text = document.getElementById('status-text');
+                    const model = document.getElementById('model-name');
+                    
+                    if (data.embedding_status === 'ok') {
+                        dot.className = 'status-dot bg-green-500';
+                        text.textContent = '🟢 在线';
+                        // 从 API 获取嵌入模型信息
+                        embeddingModel = data.embedding_model || '未知';
+                        embeddingDim = data.embedding_dim || 0;
+                        model.textContent = `${embeddingModel} (${embeddingDim}D)`;
+                    } else {
+                        dot.className = 'status-dot bg-red-500';
+                        text.textContent = '🔴 离线';
+                        model.textContent = '服务未响应';
+                    }
+
+                    // 更新服务器信息
+                    document.getElementById('server-info').textContent = 
+                        `数据库: ${data.facts_count} 条事实 | 向量: ${data.vectors_count}`;
+                    
+                    // 加载生命周期统计
+                    loadLifecycleStats();
+                    
+                    // 更新饼图
+                }
+            } catch (e) {
+                console.error('加载状态失败:', e);
+                if (retry > 0) {
+                    setTimeout(() => loadStatus(retry - 1), 1000);
+                }
+            }
+        }
+
+        // 更新类型饼图
+
+        // 加载事实列表
+        async function loadFacts() {
+            try {
+                const params = new URLSearchParams({
+                    
+                    limit: currentLimit,
+                    offset: currentOffset
+                });
+                
+                const res = await fetch(`/api/facts?${params}`);
+                const json = await res.json();
+                
+                if (json.success) {
+                    totalFacts = json.data.total;
+                    renderFactsTable(json.data.facts);
+                    updatePagination();
+                }
+            } catch (e) {
+                console.error('加载事实失败:', e);
+            }
+        }
+
+        // 加载生命周期统计
+        async function loadLifecycleStats() {
+            try {
+                const res = await fetch('/api/lifecycle/stats');
+                const json = await res.json();
+                
+                if (json.success) {
+                    const data = json.data;
+                    
+                    // 更新状态分布
+                    document.getElementById('stat-active').textContent = data.state_distribution.active;
+                    document.getElementById('stat-archived').textContent = data.state_distribution.archived;
+                    document.getElementById('stat-superseded').textContent = data.state_distribution.superseded;
+                    document.getElementById('stat-forgotten').textContent = data.state_distribution.forgotten;
+                    
+                    // 更新平均有效置信度
+                    const avgConf = Math.round(data.avg_effective_confidence * 100);
+                    document.getElementById('avg-effective-confidence').textContent = avgConf + '%';
+                    document.getElementById('confidence-bar').style.width = avgConf + '%';
+                    
+                    // 更新候选数量
+                    document.getElementById('cleanup-count').textContent = data.cleanup_candidates_count;
+                    document.getElementById('distill-count').textContent = data.distill_candidates_count;
+                }
+            } catch (e) {
+                console.error('加载生命周期统计失败:', e);
+            }
+        }
+
+        // 显示清理候选弹窗
+        function showCleanupCandidates() {
+            const modal = document.getElementById('cleanup-modal');
+            modal.classList.remove('hidden');
+            modal.style.display = 'flex';
+            // 强制重绘以避免渲染问题
+            void modal.offsetHeight;
+            loadCleanupCandidates();
+        }
+
+        // 关闭清理候选弹窗
+        function closeCleanupModal() {
+            const modal = document.getElementById('cleanup-modal');
+            modal.classList.add('hidden');
+            modal.style.display = '';
+        }
+
+        // 点击模态框背景关闭
+        document.getElementById('cleanup-modal')?.addEventListener('click', function(e) {
+            if (e.target === this) closeCleanupModal();
+        });
+
+        // 加载清理候选列表
+        async function loadCleanupCandidates() {
+            const threshold = document.getElementById('cleanup-threshold').value;
+            document.getElementById('cleanup-threshold-value').textContent = threshold;
+            
+            const listDiv = document.getElementById('cleanup-list');
+            listDiv.innerHTML = '<div class="text-center py-8 text-gray-400"><div class="loading-spinner mx-auto mb-2"></div>加载中...</div>';
+            
+            try {
+                const res = await fetch(`/api/lifecycle/cleanup-candidates?min_priority=${threshold}&limit=100`);
+                const json = await res.json();
+                
+                if (json.success) {
+                    const candidates = json.data.candidates;
+                    
+                    if (candidates.length === 0) {
+                        listDiv.innerHTML = '<div class="text-center py-12 text-gray-400"><div class="text-4xl mb-2">✨</div><p>暂无清理候选</p><p class="text-sm">所有记忆都很健康！</p></div>';
+                        return;
+                    }
+                    
+                    listDiv.innerHTML = candidates.map(c => `
+                        <div class="flex items-start gap-3 p-3 bg-white rounded-lg border border-gray-200 hover:border-red-300 hover:shadow-sm transition">
+                            <input type="checkbox" class="cleanup-checkbox mt-1 w-4 h-4 rounded text-red-500" value="${c.id}">
+                            <div class="flex-1 min-w-0">
+                                <p class="text-gray-800 text-sm line-clamp-2">${c.content}</p>
+                                <div class="flex items-center gap-3 mt-2 text-xs">
+                                    <span class="px-2 py-0.5 bg-red-100 text-red-700 rounded font-medium">优先级: ${c.priority}</span>
+                                    <span class="text-gray-500">置信度: ${Math.round(c.effective_confidence * 100)}%</span>
+                                    <span class="text-gray-500">重要度: ${Math.round(c.importance * 100)}%</span>
+                                    <span class="text-gray-400">访问: ${c.access_count}次</span>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    listDiv.innerHTML = `<div class="text-center py-8 text-red-400">加载失败: ${json.error}</div>`;
+                }
+            } catch (e) {
+                listDiv.innerHTML = `<div class="text-center py-8 text-red-400">加载失败: ${e.message}</div>`;
+            }
+        }
+
+        // 清理候选全选
+        function selectAllCleanup() {
+            const checkboxes = document.querySelectorAll('.cleanup-checkbox');
+            const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+            checkboxes.forEach(cb => cb.checked = !allChecked);
+        }
+
+        // 批量清理
+        async function batchCleanup(action) {
+            const selected = Array.from(document.querySelectorAll('.cleanup-checkbox:checked')).map(cb => cb.value);
+            
+            if (selected.length === 0) {
+                showToast('请先选择要清理的记忆', 'warning');
+                return;
+            }
+            
+            const actionText = action === 'delete_permanently' ? '永久删除' : '标记为遗忘';
+            if (!confirm(`确定要${actionText}选中的 ${selected.length} 条记忆吗？`)) return;
+            
+            try {
+                const res = await fetch('/api/lifecycle/batch-cleanup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ memory_ids: selected, action: action })
+                });
+                
+                const json = await res.json();
+                
+                if (json.success) {
+                    showToast(`${actionText}完成: ${json.data.success}/${json.data.processed}`, 'success');
+                    loadCleanupCandidates();
+                    loadAll(); // 刷新主列表
+                } else {
+                    showToast('清理失败: ' + json.error, 'error');
+                }
+            } catch (e) {
+                showToast('清理失败: ' + e.message, 'error');
+            }
+        }
+
+        // 显示提炼候选弹窗
+        function showDistillCandidates() {
+            const modal = document.getElementById('distill-modal');
+            modal.classList.remove('hidden');
+            modal.style.display = 'flex';
+            void modal.offsetHeight;
+            loadDistillCandidates();
+        }
+
+        // 关闭提炼候选弹窗
+        function closeDistillModal() {
+            const modal = document.getElementById('distill-modal');
+            modal.classList.add('hidden');
+            modal.style.display = '';
+        }
+
+        // 点击模态框背景关闭
+        document.getElementById('distill-modal')?.addEventListener('click', function(e) {
+            if (e.target === this) closeDistillModal();
+        });
+
+        // 加载提炼候选列表
+        async function loadDistillCandidates() {
+            const threshold = document.getElementById('distill-threshold').value;
+            document.getElementById('distill-threshold-value').textContent = threshold;
+            
+            const listDiv = document.getElementById('distill-list');
+            listDiv.innerHTML = '<div class="text-center py-8 text-gray-400"><div class="loading-spinner mx-auto mb-2"></div>加载中...</div>';
+            
+            try {
+                const res = await fetch(`/api/lifecycle/distill-candidates?min_priority=${threshold}&limit=100`);
+                const json = await res.json();
+                
+                if (json.success) {
+                    const candidates = json.data.candidates;
+                    
+                    if (candidates.length === 0) {
+                        listDiv.innerHTML = '<div class="text-center py-12 text-gray-400"><div class="text-4xl mb-2">💎</div><p>暂无提炼候选</p><p class="text-sm">还没有高价值的记忆需要归档</p></div>';
+                        return;
+                    }
+                    
+                    listDiv.innerHTML = candidates.map(c => `
+                        <div class="flex items-start gap-3 p-3 bg-white rounded-lg border border-gray-200 hover:border-blue-300 hover:shadow-sm transition">
+                            <input type="checkbox" class="distill-checkbox mt-1 w-4 h-4 rounded text-blue-500" value="${c.id}">
+                            <div class="flex-1 min-w-0">
+                                <p class="text-gray-800 text-sm line-clamp-2">${c.content}</p>
+                                <div class="flex items-center gap-3 mt-2 text-xs">
+                                    <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded font-medium">优先级: ${c.priority}</span>
+                                    <span class="text-gray-500">有效置信度: ${Math.round(c.effective_confidence * 100)}%</span>
+                                    <span class="text-gray-500">重要度: ${Math.round(c.importance * 100)}%</span>
+                                    <span class="text-green-600">访问: ${c.access_count}次</span>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    listDiv.innerHTML = `<div class="text-center py-8 text-red-400">加载失败: ${json.error}</div>`;
+                }
+            } catch (e) {
+                listDiv.innerHTML = `<div class="text-center py-8 text-red-400">加载失败: ${e.message}</div>`;
+            }
+        }
+
+        // 提炼候选全选
+        function selectAllDistill() {
+            const checkboxes = document.querySelectorAll('.distill-checkbox');
+            const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+            checkboxes.forEach(cb => cb.checked = !allChecked);
+        }
+
+        // 批量提炼
+        async function batchDistill(createDoc) {
+            const selected = Array.from(document.querySelectorAll('.distill-checkbox:checked')).map(cb => cb.value);
+            
+            if (selected.length === 0) {
+                showToast('请先选择要提炼的记忆', 'warning');
+                return;
+            }
+            
+            if (!confirm(`确定要归档选中的 ${selected.length} 条记忆吗？`)) return;
+            
+            try {
+                const res = await fetch('/api/lifecycle/batch-distill', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ memory_ids: selected, create_knowledge_doc: createDoc })
+                });
+                
+                const json = await res.json();
+                
+                if (json.success) {
+                    let msg = `归档完成: ${json.data.success}/${json.data.processed}`;
+                    if (createDoc && json.data.knowledge_doc) {
+                        msg += `，已生成知识文档`;
+                        // 可以下载或显示知识文档
+                        console.log('知识文档:', json.data.knowledge_doc);
+                    }
+                    showToast(msg, 'success');
+                    loadDistillCandidates();
+                    loadAll();
+                } else {
+                    showToast('归档失败: ' + json.error, 'error');
+                }
+            } catch (e) {
+                showToast('归档失败: ' + e.message, 'error');
+            }
+        }
+
+        // 渲染事实表格
+        function renderFactsTable(facts) {
+            const tbody = document.getElementById('facts-table');
+            
+            if (facts.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-gray-400">暂无数据</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = facts.map(f => {
+                // 生命周期状态标签样式
+                const stateColors = {
+                    'ACTIVE': 'bg-green-100 text-green-700',
+                    'ARCHIVED': 'bg-gray-100 text-gray-600',
+                    'SUPERSEDED': 'bg-orange-100 text-orange-700',
+                    'FORGOTTEN': 'bg-red-100 text-red-700'
+                };
+                const stateLabels = {
+                    'ACTIVE': '活跃',
+                    'ARCHIVED': '归档',
+                    'SUPERSEDED': '取代',
+                    'FORGOTTEN': '遗忘'
+                };
+                const stateClass = stateColors[f.lifecycle_state] || stateColors['ACTIVE'];
+                const stateLabel = stateLabels[f.lifecycle_state] || '活跃';
+                
+                // 衰减率类型标识
+                const decayType = f.decay_rate <= 0.001 ? '长期' : 
+                                  f.decay_rate <= 0.01 ? '中期' : 
+                                  f.decay_rate <= 0.05 ? '短期' : '即时';
+                const decayColor = f.decay_rate <= 0.001 ? 'text-blue-600' : 
+                                   f.decay_rate <= 0.01 ? 'text-green-600' : 
+                                   f.decay_rate <= 0.05 ? 'text-yellow-600' : 'text-red-600';
+                
+                return `
+                <tr class="hover:bg-blue-50/50 transition-colors">
+                    <td class="px-4 py-3">
+                        <input type="checkbox" class="fact-checkbox w-5 h-5 rounded text-blue-500 focus:ring-blue-500" value="${f.id}" onchange="updateSelectedCount()">
+                    </td>
+                    <td class="px-4 py-3" style="max-width: 400px;">
+                        <p class="text-gray-700 line-clamp-2">${f.content}</p>
+                    </td>
+                    <td class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">${formatTime(f.timestamp)}</td>
+                    <td class="px-4 py-3">
+                        <div class="flex flex-wrap gap-1">
+                            ${(f.entities || []).map(e => `<span class="entity-tag">${e}</span>`).join('')}
+                        </div>
+                    </td>
+                    <td class="px-4 py-3">
+                        <div class="flex flex-col gap-1">
+                            <span class="px-2 py-1 ${stateClass} rounded text-xs font-medium w-fit">${stateLabel}</span>
+                            <span class="text-xs ${decayColor}">${decayType} · ${f.access_count || 0}次访问</span>
+                        </div>
+                    </td>
+                    <td class="px-4 py-3 text-center">
+                        <button onclick="deleteFact('${f.id}')" 
+                            class="text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1 rounded-lg text-sm transition">删除</button>
+                    </td>
+                </tr>
+            `}).join('');
+        }
+
+        // 全选/取消全选
+        function toggleSelectAllFacts() {
+            const checked = document.getElementById('select-all-facts').checked;
+            document.querySelectorAll('.fact-checkbox').forEach(cb => {
+                cb.checked = checked;
+            });
+            updateSelectedCount();
+        }
+
+        // 更新已选数量
+        function updateSelectedCount() {
+            const count = document.querySelectorAll('.fact-checkbox:checked').length;
+            document.getElementById('selected-count').textContent = `已选 ${count} 条`;
+        }
+
+        // 批量删除事实（并行处理）
+        async function deleteSelectedFacts() {
+            const selected = Array.from(document.querySelectorAll('.fact-checkbox:checked')).map(cb => cb.value);
+            if (selected.length === 0) {
+                showToast('请先选择要删除的事实', 'warning');
+                return;
+            }
+            if (!confirm('确定要删除选中的 ' + selected.length + ' 条事实吗？')) return;
+            
+            // 显示 loading
+            const btn = event.target;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<div class="loading-spinner"></div> 删除中...';
+            btn.disabled = true;
+            
+            try {
+                // 并行删除所有选中的事实
+                const results = await Promise.all(
+                    selected.map(factId => 
+                        fetch('/api/facts/' + factId, {method: 'DELETE'})
+                            .then(res => res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`)))
+                    )
+                );
+                
+                const successCount = results.filter(r => r && r.success).length;
+                showToast(`删除完成: ${successCount}/${selected.length} 条`, successCount === selected.length ? 'success' : 'warning');
+                loadAll();
+            } catch (e) {
+                console.error('删除失败:', e);
+                showToast('删除失败: ' + e.message, 'error');
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        // 更新分页
+        function updatePagination() {
+            const start = currentOffset + 1;
+            const end = Math.min(currentOffset + currentLimit, totalFacts);
+            
+            document.getElementById('facts-info').textContent = 
+                `显示 ${start}-${end} / 共 ${totalFacts} 条`;
+            
+            document.getElementById('prev-btn').disabled = currentOffset <= 0;
+            document.getElementById('next-btn').disabled = end >= totalFacts;
+        }
+
+        // 切换数据标签页
+        function switchDataTab(tab) {
+            const factsPanel = document.getElementById('facts-panel');
+            const entitiesPanel = document.getElementById('entities-panel');
+            const relationsPanel = document.getElementById('relations-panel');
+            const factsTab = document.getElementById('tab-facts');
+            const entitiesTab = document.getElementById('tab-entities');
+            const relationsTab = document.getElementById('tab-relations');
+            
+            // 隐藏所有面板
+            factsPanel.classList.add('hidden');
+            entitiesPanel.classList.add('hidden');
+            relationsPanel.classList.add('hidden');
+            
+            // 重置所有标签样式
+            factsTab.className = 'px-5 py-2.5 text-sm font-medium rounded-t-lg transition text-gray-500 hover:text-gray-700 hover:bg-gray-100';
+            entitiesTab.className = 'px-5 py-2.5 text-sm font-medium rounded-t-lg transition text-gray-500 hover:text-gray-700 hover:bg-gray-100';
+            relationsTab.className = 'px-5 py-2.5 text-sm font-medium rounded-t-lg transition text-gray-500 hover:text-gray-700 hover:bg-gray-100';
+            
+            // 显示选中的面板
+            if (tab === 'facts') {
+                factsPanel.classList.remove('hidden');
+                factsTab.className = 'px-5 py-2.5 text-sm font-medium rounded-t-lg transition bg-blue-500 text-white';
+            } else if (tab === 'entities') {
+                entitiesPanel.classList.remove('hidden');
+                entitiesTab.className = 'px-5 py-2.5 text-sm font-medium rounded-t-lg transition bg-blue-500 text-white';
+            } else if (tab === 'relations') {
+                relationsPanel.classList.remove('hidden');
+                relationsTab.className = 'px-5 py-2.5 text-sm font-medium rounded-t-lg transition bg-blue-500 text-white';
+                // 加载关系数据
+                loadRelations();
+            }
+        }
+
+        // 加载关系列表
+        async function loadRelations() {
+            try {
+                const res = await fetch('/api/relations');
+                const json = await res.json();
+                
+                if (json.success) {
+                    renderRelationsTable(json.data || []);
+                    // 更新统计
+                    document.getElementById('relations-stats').textContent = 
+                        `总计: ${json.total || 0} 条关系`;
+                }
+            } catch (e) {
+                console.error('加载关系失败:', e);
+                document.getElementById('relations-table').innerHTML = 
+                    '<tr><td colspan="7" class="text-center py-8 text-red-400">加载失败</td></tr>';
+            }
+        }
+
+        // 渲染关系表格
+        function renderRelationsTable(relations) {
+            const tbody = document.getElementById('relations-table');
+
+            if (relations.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-gray-400">暂无关系数据</td></tr>';
+                // 禁用全选和批量删除按钮
+                document.getElementById('select-all-relations').disabled = true;
+                document.getElementById('batch-delete-relations-btn').disabled = true;
+                return;
+            }
+
+            // 启用全选复选框
+            document.getElementById('select-all-relations').disabled = false;
+
+            // 关系类型颜色映射
+            const relationColors = {
+                '喜欢': 'bg-pink-100 text-pink-800',
+                '参与': 'bg-blue-100 text-blue-800',
+                '出资': 'bg-green-100 text-green-800',
+                '资助': 'bg-green-100 text-green-800',
+                '扶持': 'bg-green-100 text-green-800',
+                '供养': 'bg-green-100 text-green-800',
+                '注资': 'bg-green-100 text-green-800',
+                '是未婚夫': 'bg-red-100 text-red-800',
+                '是亲弟弟': 'bg-purple-100 text-purple-800',
+                '是表哥': 'bg-purple-100 text-purple-800',
+                '是杀父仇人': 'bg-red-100 text-red-800',
+                '是杀母仇人': 'bg-red-100 text-red-800',
+                '是亲叔叔': 'bg-purple-100 text-purple-800',
+                '是前夫': 'bg-orange-100 text-orange-800',
+                '是亲兄长': 'bg-purple-100 text-purple-800',
+                '是救命恩人': 'bg-yellow-100 text-yellow-800',
+                '是同父异母兄长': 'bg-purple-100 text-purple-800',
+            };
+
+            tbody.innerHTML = relations.map((rel, idx) => {
+                const colorClass = relationColors[rel.relation_type] || 'bg-gray-100 text-gray-800';
+
+                return `
+                    <tr class="hover:bg-purple-50/50 transition-colors">
+                        <td class="px-4 py-3">
+                            <input type="checkbox" class="relation-checkbox w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                   data-relation-id="${rel.id}"
+                                   onchange="updateSelectedRelationsCount()">
+                        </td>
+                        <td class="px-4 py-3 font-medium text-gray-800">${rel.source_name}</td>
+                        <td class="px-4 py-3 text-center">
+                            <span class="px-3 py-1 rounded-full text-xs font-medium ${colorClass}">${rel.relation_type}</span>
+                        </td>
+                        <td class="px-4 py-3 font-medium text-gray-800">${rel.target_name}</td>
+                        <td class="px-4 py-3 text-center">
+                            <span class="text-xs ${rel.confidence > 0.8 ? 'text-green-600' : rel.confidence > 0.5 ? 'text-yellow-600' : 'text-gray-500'}">
+                                ${(rel.confidence * 100).toFixed(0)}%
+                            </span>
+                        </td>
+                        <td class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">${formatTime(rel.created_at)}</td>
+                        <td class="px-4 py-3 text-center">
+                            <button onclick="deleteSingleRelation('${rel.id}', '${rel.source_name}', '${rel.relation_type}', '${rel.target_name}')"
+                                    class="text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1 rounded text-xs transition-colors"
+                                    title="删除此关系">
+                                删除
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            // 初始化全选框状态
+            document.getElementById('select-all-relations').checked = false;
+            updateSelectedRelationsCount();
+        }
+
+        // 全选/取消全选关系
+        document.getElementById('select-all-relations').addEventListener('change', function(e) {
+            const checkboxes = document.querySelectorAll('.relation-checkbox');
+            checkboxes.forEach(cb => cb.checked = e.target.checked);
+            updateSelectedRelationsCount();
+        });
+
+        // 更新选中关系计数
+        function updateSelectedRelationsCount() {
+            const checkboxes = document.querySelectorAll('.relation-checkbox:checked');
+            const count = checkboxes.length;
+            const allCheckboxes = document.querySelectorAll('.relation-checkbox');
+            const totalCount = allCheckboxes.length;
+
+            document.getElementById('selected-relations-count').textContent = count;
+            document.getElementById('selected-relations-total').textContent = totalCount;
+
+            // 更新批量删除按钮状态
+            const batchDeleteBtn = document.getElementById('batch-delete-relations-btn');
+            batchDeleteBtn.disabled = count === 0;
+
+            // 更新全选框状态
+            const selectAllCheckbox = document.getElementById('select-all-relations');
+            if (totalCount > 0) {
+                selectAllCheckbox.checked = count === totalCount;
+                selectAllCheckbox.indeterminate = count > 0 && count < totalCount;
+            }
+        }
+
+        // 删除单个关系
+        async function deleteSingleRelation(relationId, sourceName, relationType, targetName) {
+            if (!confirm(`确定要删除关系 "${sourceName} -${relationType}-> ${targetName}" 吗？`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/relations/batch-delete`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ relation_ids: [relationId] })
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    showToast('删除成功', 'success');
+                    loadRelations(); // 重新加载关系列表
+                } else {
+                    showToast('删除失败: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showToast('删除失败: ' + error.message, 'error');
+            }
+        }
+
+        // 批量删除选中的关系
+        async function deleteSelectedRelations() {
+            const checkboxes = document.querySelectorAll('.relation-checkbox:checked');
+            const relationIds = Array.from(checkboxes).map(cb => cb.dataset.relationId);
+
+            if (relationIds.length === 0) {
+                showToast('请先选择要删除的关系', 'warning');
+                return;
+            }
+
+            if (!confirm(`确定要删除选中的 ${relationIds.length} 条关系吗？`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/relations/batch-delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ relation_ids: relationIds })
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    showToast(`删除成功: ${result.data.deleted} 条`, 'success');
+                    loadRelations(); // 重新加载关系列表
+                    // 重置全选框
+                    document.getElementById('select-all-relations').checked = false;
+                } else {
+                    showToast('删除失败: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showToast('删除失败: ' + error.message, 'error');
+            }
+        }
+
+
+        // 筛选类型
+
+        function prevPage() {
+            if (currentOffset > 0) {
+                currentOffset -= currentLimit;
+                loadFacts();
+            }
+        }
+
+        function nextPage() {
+            if (currentOffset + currentLimit < totalFacts) {
+                currentOffset += currentLimit;
+                loadFacts();
+            }
+        }
+
+        // 加载实体列表
+        async function loadEntities() {
+            try {
+                const res = await fetch('/api/entities');
+                const json = await res.json();
+                
+                if (json.success) {
+                    allEntities = json.data;
+                    renderEntitiesTable(json.data);
+                    updateEntityFilter(json.data);
+                    updateEntityTypes(json.data);
+                }
+            } catch (e) {
+                console.error('加载实体失败:', e);
+            }
+        }
+
+        // 全局变量（分页相关）
+        let currentPage = 1;
+        let pageSize = 20;
+        let totalEntities = 0;
+
+        // 更新关系数统计
+        function updateRelationsCount() {
+            fetch('/api/relations')
+                .then(res => res.json())
+                .then(json => {
+                    if (json.success) {
+                        document.getElementById('relations-count').textContent = json.total || 0;
+                        document.getElementById('relations-types-list').textContent =
+                            `共 ${json.total || 0} 条关系`;
+                    }
+                })
+                .catch(e => console.error('获取关系数失败:', e));
+        }
+
+        // 更新实体过滤
+        function updateEntityFilter(entities) {
+            const filterEl = document.getElementById('entity-filter');
+            if (!filterEl) {
+                renderEntitiesTable(entities);
+                return;
+            }
+            const filter = filterEl.value.toLowerCase();
+            const filtered = entities.filter(e =>
+                e.type.toLowerCase().includes(filter)
+            );
+            renderEntitiesTable(filtered);
+        }
+
+        // 加载实体（支持分页）
+        async function loadEntities(page = 1) {
+            try {
+                const res = await fetch(`/api/entities?page=${page}&page_size=${pageSize}`);
+                const json = await res.json();
+
+                if (json.success) {
+                    allEntities = json.data;
+                    renderEntitiesTable(json.data);
+                    updateEntityFilter(json.data);
+
+                    // 更新分页信息
+                    totalEntities = json.total;
+                    currentPage = json.page;
+                    renderPagination();
+                } else {
+                    console.error('加载实体失败:', json.error);
+                }
+            } catch (e) {
+                console.error('加载实体失败:', e);
+            }
+        }
+
+        // 渲染分页控件
+        function renderPagination() {
+            const totalPages = Math.ceil(totalEntities / pageSize);
+            const paginationContainer = document.getElementById('entities-pagination');
+
+            if (!paginationContainer) return;
+
+            if (totalPages <= 1) {
+                paginationContainer.innerHTML = '';
+                return;
+            }
+
+            let html = `
+            <div class="flex items-center gap-2 flex-wrap justify-center">
+                <button onclick="prevEntitiesPage()"
+                    class="px-3 py-1 rounded-lg text-sm transition-colors hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed">
+                    上一页
+                </button>
+                <span class="text-sm text-gray-600">
+                    第 <span id="current-page">${currentPage}</span> / <span id="total-pages-display">${totalPages}</span> 页
+                </span>
+                <div class="flex gap-1">
+                    <button onclick="nextEntitiesPage()"
+                        class="px-3 py-1 rounded-lg text-sm transition-colors hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed">
+                    下一页
+                </button>
+            </div>
+            `;
+            paginationContainer.innerHTML = html;
+        }
+
+        // 上一页
+        function prevEntitiesPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                loadEntities(currentPage);
+            }
+        }
+
+        // 下一页
+        function nextEntitiesPage() {
+            if (currentPage < Math.ceil(totalEntities / pageSize)) {
+                currentPage++;
+                loadEntities(currentPage);
+            }
+        }
+
+        // 渲染实体表格
+        function renderEntitiesTable(entities) {
+            const tbody = document.getElementById('entities-table');
+            
+            if (entities.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-gray-400">暂无数据</td></tr>';
+                return;
+            }
+            
+            const typeColors = {
+                'PERSON': 'bg-blue-100 text-blue-800',
+                'TOOL': 'bg-green-100 text-green-800',
+                'SYSTEM': 'bg-purple-100 text-purple-800',
+                'PROJECT': 'bg-orange-100 text-orange-800',
+                'CONCEPT': 'bg-yellow-100 text-yellow-800',
+                'PLACE': 'bg-red-100 text-red-800',
+                'EVENT': 'bg-pink-100 text-pink-800',
+                'GAME': 'bg-indigo-100 text-indigo-800',
+                'ORGANIZATION': 'bg-cyan-100 text-cyan-800',
+            };
+            
+            const typeNames = {
+                'PERSON': '人物',
+                'TOOL': '工具',
+                'SYSTEM': '系统',
+                'PROJECT': '项目',
+                'CONCEPT': '概念',
+                'PLACE': '地点',
+                'EVENT': '事件',
+                'GAME': '游戏',
+                'ORGANIZATION': '组织',
+            };
+            
+            tbody.innerHTML = entities.map(e => `
+                <tr class="hover:bg-green-50/50 transition-colors">
+                    <td class="px-4 py-3">
+                        <input type="checkbox" class="entity-checkbox w-5 h-5 rounded text-green-500 focus:ring-green-500" value="${e.slug}" onchange="updateSelectedEntityCount()">
+                    </td>
+                    <td class="px-4 py-3 font-medium text-gray-800">${e.name}</td>
+                    <td class="px-4 py-3">
+                        <code class="text-xs bg-slate-100 px-2 py-1 rounded text-slate-600">${e.slug}</code>
+                    </td>
+                    <td class="px-4 py-3">
+                        <span class="px-3 py-1 rounded-full text-xs font-medium ${typeColors[e.type] || 'bg-gray-100'}">${typeNames[e.type] || e.type}</span>
+                    </td>
+                    <td class="px-4 py-3 text-center font-bold text-blue-600">${e.fact_count}</td>
+                    <td class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">${formatTime(e.first_seen)}</td>
+                    <td class="px-4 py-3 text-center">
+                        <button onclick="deleteEntity('${e.slug}', ${e.fact_count})"
+                            class="text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1 rounded-lg text-sm transition">删除</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // 全选/取消全选实体
+        function toggleSelectAllEntities() {
+            const checked = document.getElementById('select-all-entities').checked;
+            document.querySelectorAll('.entity-checkbox').forEach(cb => {
+                cb.checked = checked;
+            });
+            updateSelectedEntityCount();
+        }
+
+        // 更新已选实体数量
+        function updateSelectedEntityCount() {
+            const count = document.querySelectorAll('.entity-checkbox:checked').length;
+            document.getElementById('selected-entity-count').textContent = '已选 ' + count + ' 个';
+        }
+
+        // 批量删除实体（并行处理）
+        async function deleteSelectedEntities() {
+            const selected = Array.from(document.querySelectorAll('.entity-checkbox:checked')).map(cb => cb.value);
+            if (selected.length === 0) {
+                showToast('请先选择要删除的实体', 'warning');
+                return;
+            }
+            if (!confirm('确定要删除选中的 ' + selected.length + ' 个实体吗？\n这将同时删除关联的所有事实和向量。')) return;
+            
+            // 显示 loading
+            const btn = event.target;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<div class="loading-spinner"></div> 删除中...';
+            btn.disabled = true;
+            
+            try {
+                // 并行删除所有选中的实体
+                const results = await Promise.all(
+                    selected.map(slug => 
+                        fetch('/api/entities/' + slug, {method: 'DELETE'})
+                            .then(res => res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`)))
+                    )
+                );
+                
+                const successCount = results.filter(r => r && r.success).length;
+                showToast(`删除完成: ${successCount}/${selected.length} 个实体`, successCount === selected.length ? 'success' : 'warning');
+                loadAll();
+            } catch (e) {
+                console.error('删除失败:', e);
+                showToast('删除失败: ' + e.message, 'error');
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        // 更新实体筛选下拉（动态生成所有类型分组）
+        function updateEntityFilter(entities) {
+            const select = document.getElementById('entity-filter');
+            if (!select) {
+                // 元素不存在，直接渲染表格
+                renderEntitiesTable(entities);
+                return;
+            }
+
+            // 动态获取所有类型
+            const typeGroups = {};
+            entities.forEach(e => {
+                if (!typeGroups[e.type]) {
+                    typeGroups[e.type] = [];
+                }
+                typeGroups[e.type].push(e);
+            });
+            
+            const icons = { 
+                'PERSON': '👤', 'TOOL': '🔧', 'SYSTEM': '🖥️', 'PROJECT': '📁', 
+                'CONCEPT': '💡', 'PLACE': '📍', 'EVENT': '🎉', 'GAME': '🎮', 
+                'ORGANIZATION': '🏢', 'OTHER': '📌' 
+            };
+            
+            // 排序：常用类型在前
+            const typeOrder = ['PERSON', 'TOOL', 'SYSTEM', 'PROJECT', 'CONCEPT', 'PLACE', 'EVENT', 'GAME', 'ORGANIZATION'];
+            const sortedTypes = Object.keys(typeGroups).sort((a, b) => {
+                const aIdx = typeOrder.indexOf(a);
+                const bIdx = typeOrder.indexOf(b);
+                if (aIdx === -1 && bIdx === -1) return a.localeCompare(b);
+                if (aIdx === -1) return 1;
+                if (bIdx === -1) return -1;
+                return aIdx - bIdx;
+            });
+            
+            let html = '<option value="">全部实体</option>';
+            for (const type of sortedTypes) {
+                const list = typeGroups[type];
+                html += `<optgroup label="${icons[type] || '📌'} ${type}">`;
+                list.forEach(e => {
+                    html += `<option value="${e.slug}">${e.name} (${e.fact_count})</option>`;
+                });
+                html += '</optgroup>';
+            }
+            
+            select.innerHTML = html;
+        }
+
+        // 搜索
+        async function doSearch() {
+            const query = document.getElementById('search-input').value.trim();
+
+            if (!query) {
+                showToast('请输入搜索关键词', 'warning');
+                return;
+            }
+
+            try {
+                const params = new URLSearchParams({
+                    q: query,
+                    mode: 'hybrid',
+                    limit: 50
+                });
+
+                const res = await fetch(`/api/search?${params}`);
+                const json = await res.json();
+
+                if (json.success) {
+                    renderSearchResults(json.data);
+                }
+            } catch (e) {
+                console.error('搜索失败:', e);
+                showToast('搜索失败: ' + e.message, 'error');
+            }
+        }
+
+        // 渲染搜索结果
+        function renderSearchResults(data) {
+            const container = document.getElementById('search-results');
+            const list = document.getElementById('search-list');
+            const count = document.getElementById('search-count');
+            
+            container.classList.remove('hidden');
+            count.textContent = data.count;
+            
+            if (data.count === 0) {
+                list.innerHTML = '<p class="text-gray-400 text-center py-8">🔍 未找到匹配结果</p>';
+                return;
+            }
+            
+            list.innerHTML = data.results.map(r => `
+                <div class="border border-gray-200 rounded-xl p-4 hover:bg-gradient-to-r hover:from-blue-50 hover:to-purple-50 transition-all shadow-sm hover:shadow-md">
+                    <div class="flex justify-between items-start mb-3">
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded">${r.match_type}</span>
+                            <span class="text-xs text-blue-600 font-medium">✨ 分数: ${r.score.toFixed(3)}</span>
+                        </div>
+                        <span class="text-xs text-gray-400">${formatTime(r.timestamp)}</span>
+                    </div>
+                    <p class="text-sm text-gray-700 mb-3">${r.content}</p>
+                    <div class="flex flex-wrap gap-1">
+                        ${(r.entities || []).map(e => `<span class="entity-tag">${e}</span>`).join('')}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function clearSearch() {
+            document.getElementById('search-input').value = '';
+            document.getElementById('search-results').classList.add('hidden');
+        }
+
+        // 简化添加事实：一个输入框，自动提取实体，支持 JSON 格式输入
+        async function addFactSimple() {
+            const input = document.getElementById('new-fact-input');
+            const result = document.getElementById('add-result');
+            const content = input.value.trim();
+            
+            if (!content) {
+                result.textContent = '请输入内容';
+                result.className = 'mt-3 text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg';
+                return;
+            }
+            
+            result.innerHTML = '<div class="flex items-center gap-2"><div class="loading-spinner"></div><span>添加中...</span></div>';
+            result.className = 'mt-3 text-sm text-gray-600';
+            
+            try {
+                let payload;
+                
+                // 检测是否为 JSON 格式
+                if (content.startsWith('{') || content.startsWith('[')) {
+                    try {
+                        const parsed = JSON.parse(content);
+                        
+                        // 如果是数组，取第一个元素
+                        const data = Array.isArray(parsed) ? parsed[0] : parsed;
+                        
+                        // 处理 entities 字段（支持字符串数组或对象数组）
+                        let entities = data.entities || data.entity || [];
+                        if (entities.length > 0 && typeof entities[0] === 'object') {
+                            // 已经是对象数组格式，保持原样
+                            entities = entities.map(e => ({
+                                name: e.name || e,
+                                type: e.type || e.entity_type || null
+                            }));
+                        }
+                        // 如果是字符串数组，保持原样
+                        
+                        // 构建 payload，从 JSON 中提取字段
+                        payload = {
+                            content: data.content || data.text || data.fact || '',
+                            kind: 'fact',
+                            entities: entities,
+                            relations: data.relations || data.relation || [],
+                            confidence: data.confidence || 0.9,
+                            importance: data.importance || 0.5,
+                            tags: data.tags || [],
+                            auto_extract: !data.entities || data.entities.length === 0  // 如果没有实体则自动提取
+                        };
+                        
+                        if (!payload.content) {
+                            throw new Error('JSON 中缺少 content 字段');
+                        }
+                        
+                        // 显示解析结果
+                        const entityInfo = Array.isArray(entities) && entities.length > 0 
+                            ? (typeof entities[0] === 'object' 
+                                ? entities.map(e => `${e.name}:${e.type||'?'}`).join(', ')
+                                : entities.join(', '))
+                            : '无';
+                        result.innerHTML = `<div class="flex items-center gap-2"><div class="loading-spinner"></div><span>解析 JSON: 事实, entities=[${entityInfo}], relations=${payload.relations.length}</span></div>`;
+                        
+                    } catch (parseError) {
+                        // JSON 解析失败，当作普通文本处理
+                        payload = {
+                            content: content,
+                            kind: 'fact',
+                            confidence: 0.9
+                        };
+                    }
+                } else {
+                    // 普通文本
+                    payload = {
+                        content: content,
+                        kind: 'fact',
+                        confidence: 0.9
+                    };
+                }
+                
+                // 调用添加 API
+                const res = await fetch('/api/facts', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                
+                const json = await res.json();
+                
+                if (json.success) {
+                    // 导入成功
+                    input.value = '';
+                    const entities = json.data.entities || [];
+                    const relations = json.data.relations || [];
+                    result.innerHTML = `✅ <strong>添加成功！</strong> 实体: ${entities.length > 0 ? entities.join(', ') : '无'} | 关系: ${relations.length}`;
+                    result.className = 'mt-3 text-sm text-green-600 bg-green-50 px-4 py-3 rounded-lg';
+                    loadAll();
+                } else if (json.error_code === 'RELATION_ENTITY_MISMATCH') {
+                    // 关系实体不匹配，保存到待修正列表
+                    result.innerHTML = `⚠️ <strong>关系实体不在 entities 列表中</strong>，已保存到待修正列表`;
+                    result.className = 'mt-3 text-sm text-yellow-600 bg-yellow-50 px-4 py-3 rounded-lg';
+                    
+                    // 保存到本地存储
+                    let pendingFixes = JSON.parse(localStorage.getItem('pendingRelationFixes') || '[]');
+                    pendingFixes.push({
+                        content: json.data.content,
+                        entities: json.data.entities,
+                        relations: json.data.relations,
+                        confidence: json.data.confidence,
+                        importance: json.data.importance,
+                        tags: json.data.tags,
+                        errorRelations: json.error_relations,
+                        timestamp: Date.now()
+                    });
+                    localStorage.setItem('pendingRelationFixes', JSON.stringify(pendingFixes));
+                    updateFixBadge();
+                    
+                    // 清空输入框
+                    input.value = '';
+                } else {
+                    // 其他错误
+                    result.textContent = '❌ 添加失败: ' + json.error;
+                    result.className = 'mt-3 text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg';
+                }
+            } catch (e) {
+                result.textContent = '❌ 添加失败: ' + e.message;
+                result.className = 'mt-3 text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg';
+            }
+        }
+
+        // 删除事实
+        async function deleteFact(factId) {
+            if (!confirm('确定要删除这条事实吗？')) return;
+            
+            try {
+                const res = await fetch(`/api/facts/${factId}`, {method: 'DELETE'});
+                
+                if (!res.ok) {
+                    const error = await res.json().catch(() => ({}));
+                    showToast('删除失败: ' + (error.error || `HTTP ${res.status}`), 'error');
+                    return;
+                }
+                
+                const json = await res.json();
+                if (json.success) {
+                    showToast('删除成功', 'success');
+                    await loadAll();
+                } else {
+                    showToast('删除失败: ' + json.error, 'error');
+                }
+            } catch (e) {
+                showToast('删除失败: ' + e.message, 'error');
+            }
+        }
+
+        // 删除实体（同时删除关联的事实和向量）
+        async function deleteEntity(slug, factCount) {
+            if (factCount > 0) {
+                if (!confirm(`该实体关联了 ${factCount} 条事实，删除实体将同时删除这些事实和向量索引。确定要删除吗？`)) return;
+            } else {
+                if (!confirm('确定要删除这个实体吗？')) return;
+            }
+            
+            try {
+                const res = await fetch(`/api/entities/${slug}`, {method: 'DELETE'});
+                
+                if (!res.ok) {
+                    const error = await res.json().catch(() => ({}));
+                    showToast('删除失败: ' + (error.error || `HTTP ${res.status}`), 'error');
+                    return;
+                }
+                
+                const json = await res.json();
+                if (json.success) {
+                    showToast(`删除成功：${json.data.deleted_facts} 条事实，${json.data.deleted_vectors} 个向量`, 'success');
+                    await loadAll();
+                } else {
+                    showToast('删除失败: ' + json.error, 'error');
+                }
+            } catch (e) {
+                showToast('删除失败: ' + e.message, 'error');
+            }
+        }
+
+        // 工具函数
+        function formatTime(isoString) {
+            if (!isoString) return '-';
+            const date = new Date(isoString);
+            const now = new Date();
+            const year = date.getFullYear();
+            const nowYear = now.getFullYear();
+            
+            // 显示年份（如果不是今年）
+            if (year !== nowYear) {
+                return date.toLocaleString('zh-CN', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            }
+            
+            return date.toLocaleString('zh-CN', {
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+        
+        // 关系修正模态框
+        let currentFixData = null;
+        
+        function showRelationFixModal(errorRelations, memoryId, fullData = null) {
+            currentFixData = { errorRelations, memoryId, fullData };
+            
+            const modal = document.getElementById('relation-fix-modal');
+            const container = document.getElementById('relation-fix-list');
+            
+            // 获取错误数据的JSON
+            const data = fullData || currentFixData;
+            const jsonStr = JSON.stringify({
+                content: data.content,
+                entities: data.entities,
+                relations: data.relations,
+                confidence: data.confidence || 0.9,
+                importance: data.importance || 0.5,
+                tags: data.tags || []
+            }, null, 2);
+            
+            // 显示错误信息和JSON编辑区
+            let errorHtml = errorRelations.map((rel, idx) => `
+                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-2">
+                    <span class="text-red-600 font-mono">${rel.from}|${rel.rel}|${rel.to}</span>
+                    <div class="text-sm text-red-500 mt-1">❌ ${rel.error}</div>
+                </div>
+            `).join('');
+            
+            container.innerHTML = `
+                <div class="mb-4">
+                    <h4 class="font-semibold text-gray-800 mb-2">❌ 错误关系 (${errorRelations.length}条)</h4>
+                    ${errorHtml}
+                </div>
+                <div>
+                    <h4 class="font-semibold text-gray-800 mb-2">📝 请修正下方 JSON</h4>
+                    <textarea id="fix-json" class="w-full h-64 border border-gray-300 rounded-lg p-3 font-mono text-sm" 
+                        placeholder="请修正 JSON 中的 entities 和 relations">${jsonStr}</textarea>
+                </div>
+            `;
+            
+            modal.classList.remove('hidden');
+        }
+        
+        function closeRelationFixModal() {
+            document.getElementById('relation-fix-modal').classList.add('hidden');
+            currentFixData = null;
+        }
+                
+function clearAllPendingFixes() {
+            if (!confirm('确定清空所有待修正数据吗？')) return;
+            localStorage.setItem('pendingRelationFixes', '[]');
+            updateFixBadge();
+            closeRelationFixModal();
+            showToast('已清空所有待修正数据', 'success');
+        }
+        
+        let isSubmitting = false;
+        
+        async function submitRelationFix() {
+            if (!currentFixData || isSubmitting) return;
+            
+            // 设置加载状态
+            isSubmitting = true;
+            const btn = document.getElementById('fix-submit-btn');
+            const originalText = btn.textContent;
+            btn.textContent = '处理中...';
+            btn.disabled = true;
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+            
+            const { fullData } = currentFixData;
+            
+            try {
+                // 获取用户修正后的JSON
+                const jsonStr = document.getElementById('fix-json').value;
+                let correctedData;
+                
+                try {
+                    correctedData = JSON.parse(jsonStr);
+                } catch (parseErr) {
+                    showToast('JSON 格式错误，请检查', 'error');
+                    return;
+                }
+                
+                // 验证必要字段
+                if (!correctedData.content) {
+                    showToast('缺少 content 字段', 'error');
+                    return;
+                }
+                
+                // 直接提交修正后的数据（后端会检查关系）
+                const payload = {
+                    content: correctedData.content,
+                    entities: correctedData.entities || [],
+                    relations: correctedData.relations || [],
+                    confidence: correctedData.confidence || 0.9,
+                    importance: correctedData.importance || 0.5,
+                    tags: correctedData.tags || [],
+                    auto_extract: false
+                };
+                
+                const res = await fetch('/api/facts', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                
+                const resultJson = await res.json();
+                
+                if (resultJson.success) {
+                    // 成功，从待修正列表中移除
+                    let pendingFixes = JSON.parse(localStorage.getItem('pendingRelationFixes') || '[]');
+                    pendingFixes.shift();  // 移除第一个
+                    localStorage.setItem('pendingRelationFixes', JSON.stringify(pendingFixes));
+                    updateFixBadge();
+                    
+                    closeRelationFixModal();
+                    showToast('导入成功！', 'success');
+                    loadAll();
+                    
+                    // 如果还有待修正的，继续显示
+                    if (pendingFixes.length > 0) {
+                        setTimeout(() => {
+                            showToast(`还有 ${pendingFixes.length} 条待修正`, 'warning');
+                        }, 1000);
+                    }
+                } else if (resultJson.error_code === 'RELATION_ENTITY_MISMATCH') {
+                    // 仍然有错误，更新当前数据并重新显示
+                    let pendingFixes = JSON.parse(localStorage.getItem('pendingRelationFixes') || '[]');
+                    if (pendingFixes.length > 0) {
+                        pendingFixes[0] = {
+                            content: resultJson.data.content,
+                            entities: resultJson.data.entities,
+                            relations: resultJson.data.relations,
+                            confidence: resultJson.data.confidence,
+                            importance: resultJson.data.importance,
+                            tags: resultJson.data.tags,
+                            errorRelations: resultJson.error_relations,
+                            timestamp: Date.now()
+                        };
+                        localStorage.setItem('pendingRelationFixes', JSON.stringify(pendingFixes));
+                    }
+                    
+                    // 重新显示修正弹窗
+                    showRelationFixModal(resultJson.error_relations, null, resultJson.data);
+                    showToast('仍有错误，请继续修正', 'warning');
+                } else {
+                    showToast('导入失败: ' + resultJson.error, 'error');
+                }
+                
+            } catch (e) {
+                showToast('操作失败: ' + e.message, 'error');
+            } finally {
+                // 恢复按钮状态
+                isSubmitting = false;
+                const btn = document.getElementById('fix-submit-btn');
+                if (btn) {
+                    btn.textContent = '检查并导入';
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                }
+            }
+        }
+
+        // ===== JSON 编辑器 =====
+        let jsonEditor = null;
+        let currentInputMode = 'simple';
+
+        // 初始化 CodeMirror 编辑器
+        function initJsonEditor() {
+            jsonEditor = CodeMirror(document.getElementById('json-editor'), {
+                mode: 'javascript',
+                theme: 'default',
+                lineNumbers: true,
+                matchBrackets: true,
+                autoCloseBrackets: true,
+                indentUnit: 2,
+                tabSize: 2,
+                lineWrapping: true,
+                styleActiveLine: true,
+                autofocus: false
+            });
+
+            // 加载默认模板
+            loadTemplate('minimal');
+        }
+
+        // 模式切换
+        function toggleInputMode(mode) {
+            currentInputMode = mode;
+
+            const simpleMode = document.getElementById('simple-input-mode');
+            const jsonMode = document.getElementById('json-input-mode');
+            const simpleBtn = document.getElementById('mode-simple-btn');
+            const jsonBtn = document.getElementById('mode-json-btn');
+
+            if (mode === 'simple') {
+                simpleMode.classList.remove('hidden');
+                jsonMode.classList.add('hidden');
+                simpleBtn.classList.add('bg-blue-500', 'text-white');
+                simpleBtn.classList.remove('text-gray-500', 'hover:bg-gray-100');
+                jsonBtn.classList.remove('bg-blue-500', 'text-white');
+                jsonBtn.classList.add('text-gray-500', 'hover:bg-gray-100');
+            } else {
+                simpleMode.classList.add('hidden');
+                jsonMode.classList.remove('hidden');
+                jsonBtn.classList.add('bg-blue-500', 'text-white');
+                jsonBtn.classList.remove('text-gray-500', 'hover:bg-gray-100');
+                simpleBtn.classList.remove('bg-blue-500', 'text-white');
+                simpleBtn.classList.add('text-gray-500', 'hover:bg-gray-100');
+
+                // 确保编辑器已初始化
+                if (!jsonEditor) {
+                    initJsonEditor();
+                }
+                jsonEditor.refresh();
+            }
+        }
+
+        // JSON 模板
+        function loadTemplate(templateType) {
+            let template;
+
+            if (templateType === 'minimal') {
+                template = {
+                    "content": "在这里输入事实内容..."
+                };
+            } else if (templateType === 'full') {
+                template = {
+                    "content": "sun使用支付网关完成了支付",
+                    "entities": [
+                        {"name": "sun", "type": "PERSON"},
+                        {"name": "支付网关", "type": "PROJECT"}
+                    ],
+                    "relations": [
+                        "sun|使用|支付网关"
+                    ],
+                    "confidence": 0.9,
+                    "importance": 0.5,
+                    "tags": ["支付"]
+                };
+            }
+
+            jsonEditor.setValue(JSON.stringify(template, null, 2));
+            clearValidation();
+        }
+
+        // JSON 格式化
+        function formatJson() {
+            try {
+                const content = jsonEditor.getValue();
+                const parsed = JSON.parse(content);
+                jsonEditor.setValue(JSON.stringify(parsed, null, 2));
+                showValidation('success', 'JSON 格式化成功');
+            } catch (e) {
+                showValidation('error', 'JSON 格式错误: ' + e.message);
+            }
+        }
+
+        // JSON 验证
+        function validateJson() {
+            try {
+                const content = jsonEditor.getValue();
+                const parsed = JSON.parse(content);
+
+                // 验证必填字段
+                if (!parsed.content) {
+                    showValidation('error', '缺少必填字段: content');
+                    return false;
+                }
+
+                // 验证 entities 格式
+                if (parsed.entities) {
+                    if (!Array.isArray(parsed.entities)) {
+                        showValidation('error', 'entities 必须是数组');
+                        return false;
+                    }
+                    for (const entity of parsed.entities) {
+                        if (typeof entity === 'object') {
+                            if (!entity.name) {
+                                showValidation('error', '实体对象缺少 name 字段');
+                                return false;
+                            }
+                        }
+                    }
+                }
+
+                // 验证 relations 格式
+                if (parsed.relations) {
+                    if (!Array.isArray(parsed.relations)) {
+                        showValidation('error', 'relations 必须是数组');
+                        return false;
+                    }
+                    for (const rel of parsed.relations) {
+                        if (typeof rel === 'string') {
+                            const parts = rel.split('|');
+                            if (parts.length !== 3) {
+                                showValidation('error', `关系格式错误: "${rel}"，应为 "源|关系|目标"`);
+                                return false;
+                            }
+                        } else if (typeof rel === 'object') {
+                            if (!rel.source || !rel.target || !rel.relation_type) {
+                                showValidation('error', '关系对象缺少必要字段');
+                                return false;
+                            }
+                        }
+                    }
+                }
+
+                // 验证数值范围
+                if (parsed.confidence !== undefined && (parsed.confidence < 0 || parsed.confidence > 1)) {
+                    showValidation('error', 'confidence 必须在 0.0-1.0 之间');
+                    return false;
+                }
+
+                if (parsed.importance !== undefined && (parsed.importance < 0 || parsed.importance > 1)) {
+                    showValidation('error', 'importance 必须在 0.0-1.0 之间');
+                    return false;
+                }
+
+                showValidation('success', 'JSON 验证通过');
+                return true;
+            } catch (e) {
+                showValidation('error', 'JSON 解析错误: ' + e.message);
+                return false;
+            }
+        }
+
+        // 显示验证结果
+        function showValidation(type, message) {
+            const validationDiv = document.getElementById('json-validation');
+            validationDiv.classList.remove('hidden', 'validation-success', 'validation-error');
+            validationDiv.classList.add(type === 'success' ? 'validation-success' : 'validation-error');
+            validationDiv.innerHTML = type === 'success'
+                ? `<span class="mr-2">✅</span>${message}`
+                : `<span class="mr-2">❌</span>${message}`;
+        }
+
+        function clearValidation() {
+            const validationDiv = document.getElementById('json-validation');
+            validationDiv.classList.add('hidden');
+        }
+
+        // 从 JSON 添加事实
+        async function addFactFromJson() {
+            const result = document.getElementById('json-result');
+
+            // 验证 JSON
+            if (!validateJson()) {
+                result.innerHTML = '请先修正 JSON 错误';
+                result.className = 'text-sm text-red-500';
+                return;
+            }
+
+            try {
+                const content = jsonEditor.getValue();
+                const parsed = JSON.parse(content);
+
+                // 构建 payload
+                let entities = parsed.entities || [];
+                if (entities.length > 0 && typeof entities[0] === 'object') {
+                    entities = entities.map(e => ({
+                        name: e.name || e,
+                        type: e.type || e.entity_type || null
+                    }));
+                }
+
+                const payload = {
+                    content: parsed.content,
+                    kind: 'fact',
+                    entities: entities,
+                    relations: parsed.relations || [],
+                    confidence: parsed.confidence || 0.9,
+                    importance: parsed.importance || 0.5,
+                    tags: parsed.tags || [],
+                    auto_extract: !parsed.entities || parsed.entities.length === 0
+                };
+
+                result.innerHTML = '<div class="flex items-center gap-2"><div class="loading-spinner"></div><span>添加中...</span></div>';
+                result.className = 'text-sm text-gray-600';
+
+                // 调用 API
+                const res = await fetch('/api/facts', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+
+                const json = await res.json();
+
+                if (json.success) {
+                    result.innerHTML = `✅ <strong>添加成功！</strong> 实体: ${(json.data.entities || []).join(', ') || '无'} | 关系: ${(json.data.relations || []).length}`;
+                    result.className = 'text-sm text-green-600 bg-green-50 px-4 py-3 rounded-lg';
+
+                    // 清空编辑器
+                    loadTemplate('minimal');
+
+                    // 刷新数据
+                    loadAll();
+                } else if (json.error_code === 'RELATION_ENTITY_MISMATCH') {
+                    result.innerHTML = `⚠️ <strong>关系实体不在 entities 列表中</strong>`;
+                    result.className = 'text-sm text-yellow-600 bg-yellow-50 px-4 py-3 rounded-lg';
+                } else {
+                    result.innerHTML = `❌ <strong>添加失败:</strong> ${json.error}`;
+                    result.className = 'text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg';
+                }
+            } catch (e) {
+                result.innerHTML = `❌ <strong>添加失败:</strong> ${e.message}`;
+                result.className = 'text-sm text-red-500 bg-red-50 px-3 py-2 rounded-lg';
+            }
+        }
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 初始化简单模式
+            toggleInputMode('simple');
+
+            // 更新修正徽章
+            updateFixBadge();
+        });
+    </script>
+
+    <!-- 清理候选模态框 -->
+    <div id="cleanup-modal" class="fixed inset-0 bg-black/60 hidden items-center justify-center z-50">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl m-4 max-h-[90vh] overflow-hidden flex flex-col">
+            <div class="p-6 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-red-50 to-orange-50">
+                <div class="flex items-center gap-3">
+                    <span class="text-3xl">🗑️</span>
+                    <div>
+                        <h3 class="text-xl font-bold text-gray-800">清理候选</h3>
+                        <p class="text-sm text-gray-500">基于优先级算法识别的低价值记忆</p>
+                    </div>
+                </div>
+                <button onclick="closeCleanupModal()" class="text-gray-400 hover:text-gray-600 text-2xl px-2">&times;</button>
+            </div>
+            <div class="p-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                <div class="flex items-center gap-4">
+                    <label class="text-sm text-gray-600">最小优先级:</label>
+                    <input type="range" id="cleanup-threshold" min="0.5" max="5" step="0.5" value="1" 
+                        class="w-32" onchange="loadCleanupCandidates()">
+                    <span id="cleanup-threshold-value" class="text-sm font-medium text-red-600">1.0</span>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="selectAllCleanup()" class="px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50">全选</button>
+                    <button onclick="batchCleanup('mark_forgotten')" class="px-3 py-1.5 text-sm bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200">标记遗忘</button>
+                    <button onclick="batchCleanup('delete_permanently')" class="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200">永久删除</button>
+                </div>
+            </div>
+            <div id="cleanup-list" class="flex-1 overflow-y-auto p-4 space-y-2" style="-webkit-overflow-scrolling: touch;">
+                <div class="text-center py-8 text-gray-400">加载中...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 提炼候选模态框 -->
+    <div id="distill-modal" class="fixed inset-0 bg-black/60 hidden items-center justify-center" style="z-index: 9999;">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl m-4 max-h-[90vh] overflow-hidden flex flex-col">
+            <div class="p-6 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50">
+                <div class="flex items-center gap-3">
+                    <span class="text-3xl">💎</span>
+                    <div>
+                        <h3 class="text-xl font-bold text-gray-800">提炼候选</h3>
+                        <p class="text-sm text-gray-500">高价值记忆，建议归档为知识</p>
+                    </div>
+                </div>
+                <button onclick="closeDistillModal()" class="text-gray-400 hover:text-gray-600 text-2xl px-2">&times;</button>
+            </div>
+            <div class="p-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                <div class="flex items-center gap-4">
+                    <label class="text-sm text-gray-600">最小优先级:</label>
+                    <input type="range" id="distill-threshold" min="1" max="20" step="1" value="5" 
+                        class="w-32" onchange="loadDistillCandidates()">
+                    <span id="distill-threshold-value" class="text-sm font-medium text-blue-600">5.0</span>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="selectAllDistill()" class="px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50">全选</button>
+                    <button onclick="batchDistill(false)" class="px-3 py-1.5 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200">归档</button>
+                    <button onclick="batchDistill(true)" class="px-3 py-1.5 text-sm bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200">归档并生成文档</button>
+                </div>
+            </div>
+            <div id="distill-list" class="flex-1 overflow-y-auto p-4 space-y-2" style="-webkit-overflow-scrolling: touch;">
+                <div class="text-center py-8 text-gray-400">加载中...</div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

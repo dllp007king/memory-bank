@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memory Bank - 参数配置</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 50%, #f5f3ff 100%);
+            min-height: 100vh;
+        }
+        .card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .navbar {
+            background: linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%);
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            transition: all 0.3s ease;
+        }
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            transform: translateY(-1px);
+        }
+        .slider-container {
+            position: relative;
+        }
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: #e2e8f0;
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(37, 99, 235, 0.4);
+        }
+        .param-card {
+            transition: all 0.3s ease;
+        }
+        .param-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+        }
+        .formula-box {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            border-left: 4px solid #f59e0b;
+        }
+        .info-tooltip {
+            position: relative;
+            cursor: help;
+        }
+        .info-tooltip:hover::after {
+            content: attr(data-info);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e3a5f;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            white-space: nowrap;
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+    </style>
+</head>
+<body class="pb-8">
+    <!-- 导航栏 -->
+    <nav class="navbar text-white p-4 mb-6 shadow-lg">
+        <div class="max-w-6xl mx-auto flex justify-between items-center">
+            <div class="flex items-center space-x-4">
+                <a href="/" class="text-xl font-bold">🧠 Memory Bank</a>
+                <span class="text-blue-200">|</span>
+                <span class="text-blue-200">参数配置</span>
+            </div>
+            <div class="flex space-x-4">
+                <a href="/" class="hover:text-blue-200 transition">首页</a>
+                <a href="/graph" class="hover:text-blue-200 transition">图谱</a>
+                <a href="/config" class="text-yellow-300">配置</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-6xl mx-auto px-4">
+        <!-- 核心公式说明 -->
+        <div class="card p-6 mb-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">📐 核心公式</h2>
+            <div class="grid md:grid-cols-2 gap-4">
+                <div class="formula-box p-4 rounded-lg">
+                    <h3 class="font-bold text-amber-800 mb-2">有效置信度 (effective)</h3>
+                    <code class="text-amber-900">effective = confidence × e^(-λ × days)</code>
+                    <p class="text-sm text-amber-700 mt-2">基础置信度经过时间衰减后的值</p>
+                </div>
+                <div class="formula-box p-4 rounded-lg">
+                    <h3 class="font-bold text-amber-800 mb-2">检索得分</h3>
+                    <code class="text-amber-900">score = relevance × effective</code>
+                    <p class="text-sm text-amber-700 mt-2">相关性 × 有效置信度</p>
+                </div>
+                <div class="formula-box p-4 rounded-lg">
+                    <h3 class="font-bold text-amber-800 mb-2">清理优先级</h3>
+                    <code class="text-amber-900">cleanup = (1-importance) × (1-effective) × days</code>
+                    <p class="text-sm text-amber-700 mt-2">不重要、不可信、老的记忆优先清理</p>
+                </div>
+                <div class="formula-box p-4 rounded-lg">
+                    <h3 class="font-bold text-amber-800 mb-2">提炼优先级</h3>
+                    <code class="text-amber-900">distill = importance × access_count × days</code>
+                    <p class="text-sm text-amber-700 mt-2">重要、常访问、老的记忆优先提炼</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 操作按钮 -->
+        <div class="flex justify-end mb-6 space-x-4">
+            <button onclick="resetConfig()" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition">
+                🔄 重置为默认值
+            </button>
+            <button onclick="saveAllConfig()" class="btn-primary px-6 py-2 text-white rounded-lg">
+                💾 保存所有配置
+            </button>
+        </div>
+
+        <!-- 衰减率配置 -->
+        <div class="card p-6 mb-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">📊 衰减率 (λ) 配置</h2>
+            <p class="text-gray-600 mb-4">控制信息随时间衰减的速度。λ 越大，衰减越快。</p>
+
+            <div class="space-y-6" id="decay-rates-section">
+                <!-- 动态生成 -->
+            </div>
+        </div>
+
+        <!-- 置信度配置 -->
+        <div class="card p-6 mb-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">🎯 置信度 (confidence) 配置</h2>
+            <p class="text-gray-600 mb-4">不同来源信息的初始置信度。</p>
+
+            <div class="space-y-6" id="confidence-section">
+                <!-- 动态生成 -->
+            </div>
+        </div>
+
+        <!-- 重要程度配置 -->
+        <div class="card p-6 mb-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">⭐ 重要程度 (importance) 配置</h2>
+            <p class="text-gray-600 mb-4">控制记忆的保留和清理策略。</p>
+
+            <div class="space-y-6" id="importance-section">
+                <!-- 动态生成 -->
+            </div>
+        </div>
+
+        <!-- 生命周期配置 -->
+        <div class="card p-6 mb-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">🔄 生命周期配置</h2>
+            <p class="text-gray-600 mb-4">记忆状态流转和保留时间。</p>
+
+            <div class="space-y-6" id="lifecycle-section">
+                <!-- 动态生成 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast 通知 -->
+    <div id="toast" class="fixed bottom-4 right-4 px-6 py-3 rounded-lg text-white transform translate-y-20 opacity-0 transition-all duration-300 z-50"></div>
+
+    <script>
+        // 配置数据
+        let configData = {};
+        let pendingChanges = {};
+
+        // 加载配置
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/config/data');
+                const result = await response.json();
+                if (result.success) {
+                    configData = result.data;
+                    renderAllSections();
+                } else {
+                    showToast('加载配置失败: ' + result.error, 'error');
+                }
+            } catch (e) {
+                showToast('加载配置失败: ' + e.message, 'error');
+            }
+        }
+
+        // 渲染所有配置段
+        function renderAllSections() {
+            renderSection('decay_rates', configData.decay_rates, 'decay-rates-section');
+            renderSection('confidence', configData.confidence, 'confidence-section');
+            renderSection('importance', configData.importance, 'importance-section');
+            renderSection('lifecycle', configData.lifecycle, 'lifecycle-section');
+        }
+
+        // 渲染单个配置段
+        function renderSection(sectionKey, sectionData, containerId) {
+            const container = document.getElementById(containerId);
+            const description = sectionData.description || {};
+
+            let html = '';
+            for (const [key, value] of Object.entries(sectionData)) {
+                if (key === 'description') continue;
+
+                const desc = description[key] || key;
+                const step = (typeof value === 'number' && value < 1) ? '0.001' : '1';
+                const min = (typeof value === 'number' && value < 1) ? '0' : '0';
+                const max = (typeof value === 'number' && value < 1) ? '1' : '365';
+
+                html += `
+                    <div class="param-card card p-4">
+                        <div class="flex justify-between items-center mb-2">
+                            <label class="font-medium text-gray-700">${key}</label>
+                            <span class="info-tooltip text-gray-400" data-info="${desc}">ℹ️</span>
+                        </div>
+                        <p class="text-sm text-gray-500 mb-3">${desc}</p>
+                        <div class="slider-container">
+                            <input type="range"
+                                   id="${sectionKey}_${key}"
+                                   section="${sectionKey}"
+                                   param="${key}"
+                                   value="${value}"
+                                   min="${min}"
+                                   max="${max}"
+                                   step="${step}"
+                                   oninput="updateValue('${sectionKey}', '${key}', this.value)"
+                                   class="w-full">
+                            <div class="flex justify-between mt-2">
+                                <span class="text-xs text-gray-400">${min}</span>
+                                <span id="${sectionKey}_${key}_display" class="font-bold text-blue-600">${value}</span>
+                                <span class="text-xs text-gray-400">${max}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            container.innerHTML = html;
+        }
+
+        // 更新值
+        function updateValue(section, key, value) {
+            // 更新显示
+            document.getElementById(`${section}_${key}_display`).textContent = value;
+
+            // 记录待保存的更改
+            if (!pendingChanges[section]) {
+                pendingChanges[section] = {};
+            }
+            pendingChanges[section][key] = parseFloat(value);
+        }
+
+        // 保存所有配置
+        async function saveAllConfig() {
+            let successCount = 0;
+            let failCount = 0;
+
+            for (const [section, params] of Object.entries(pendingChanges)) {
+                for (const [key, value] of Object.entries(params)) {
+                    try {
+                        const response = await fetch('/api/config/update', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ section, key, value })
+                        });
+                        const result = await response.json();
+                        if (result.success) {
+                            successCount++;
+                        } else {
+                            failCount++;
+                        }
+                    } catch (e) {
+                        failCount++;
+                    }
+                }
+            }
+
+            if (failCount === 0 && successCount > 0) {
+                showToast(`✅ 成功保存 ${successCount} 个配置项`, 'success');
+                pendingChanges = {};
+            } else if (successCount === 0 && failCount === 0) {
+                showToast('没有需要保存的更改', 'info');
+            } else {
+                showToast(`⚠️ 成功 ${successCount} 个，失败 ${failCount} 个`, 'warning');
+            }
+        }
+
+        // 重置配置
+        async function resetConfig() {
+            if (!confirm('确定要重置所有配置为默认值吗？')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/config/reset', {
+                    method: 'POST'
+                });
+                const result = await response.json();
+                if (result.success) {
+                    configData = result.data;
+                    pendingChanges = {};
+                    renderAllSections();
+                    showToast('✅ 配置已重置为默认值', 'success');
+                } else {
+                    showToast('重置失败: ' + result.error, 'error');
+                }
+            } catch (e) {
+                showToast('重置失败: ' + e.message, 'error');
+            }
+        }
+
+        // Toast 通知
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            const colors = {
+                success: 'bg-green-500',
+                error: 'bg-red-500',
+                warning: 'bg-yellow-500',
+                info: 'bg-blue-500'
+            };
+
+            toast.className = `fixed bottom-4 right-4 px-6 py-3 rounded-lg text-white transform transition-all duration-300 z-50 ${colors[type]}`;
+            toast.textContent = message;
+            toast.style.transform = 'translateY(0)';
+            toast.style.opacity = '1';
+
+            setTimeout(() => {
+                toast.style.transform = 'translateY(20px)';
+                toast.style.opacity = '0';
+            }, 3000);
+        }
+
+        // 页面加载时
+        document.addEventListener('DOMContentLoaded', loadConfig);
+    </script>
+</body>
+</html>

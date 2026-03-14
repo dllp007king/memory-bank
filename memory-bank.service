@@ -1,0 +1,18 @@
+[Unit]
+Description=Memory Bank Web Service
+After=network.target
+
+[Service]
+Type=simple
+User=myclaw
+WorkingDirectory=/home/myclaw/.openclaw/workspace/memory-bank/web
+Environment=PYTHONPATH=/home/myclaw/.openclaw/workspace/memory-bank
+Environment=FLASK_ENV=production
+ExecStart=/home/myclaw/.openclaw/workspace/memory-bank/.venv/bin/python app.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
