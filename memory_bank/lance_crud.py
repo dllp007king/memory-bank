@@ -474,11 +474,11 @@ class MemoryCRUD:
                         table.delete(f"id = '{old_mem.id}'")
                         table.add([old_mem.to_dict()])
                         superseded_memories.append(old_mem.id)
-                        logger.info("lance_crud", "[Lifecycle] 记忆 {} 被 {} 取代（矛盾处理）", {"old_id": old_mem.id, "new_id": memory_id})
+                        logger.info("lance_crud", f"[Lifecycle] 记忆 {old_mem.id} 被 {memory_id} 取代（矛盾处理）")
 
                     elif resolution == ContradictionResolution.KEEP:
                         # 新记忆置信度低，不创建
-                        logger.info("lance_crud", "[Lifecycle] 跳过新记忆 {}（旧记忆置信度更高）", {"memory_id": memory_id})
+                        logger.info("lance_crud", f"[Lifecycle] 跳过新记忆 {memory_id}（旧记忆置信度更高）")
                         return old_mem
                     # CONFIRM: 暂时保留两个，后续需要用户确认
 
@@ -489,7 +489,7 @@ class MemoryCRUD:
                     # 覆盖更新：删除旧记忆，插入新记忆
                     table = self._get_memories_table()
                     table.delete(f"id = '{old_mem.id}'")
-                    logger.info("lance_crud", "[Lifecycle] 记忆 {} 被覆盖（相似度: {:.4f}）", {"old_id": old_mem.id, "sim_score": sim_score})
+                    logger.info("lance_crud", f"[Lifecycle] 记忆 {old_mem.id} 被覆盖（相似度: {sim_score:.4f}）")
 
                 elif strategy == UpdateStrategy.MERGE and not is_contradiction:
                     # 合并更新：标记旧记忆为 SUPERSEDED
@@ -499,7 +499,7 @@ class MemoryCRUD:
                     table.delete(f"id = '{old_mem.id}'")
                     table.add([old_mem.to_dict()])
                     superseded_memories.append(old_mem.id)
-                    logger.info("lance_crud", "[Lifecycle] 记忆 {} 被 {} 合并（相似度: {:.4f}）", {"old_id": old_mem.id, "new_id": memory_id, "sim_score": sim_score})
+                    logger.info("lance_crud", f"[Lifecycle] 记忆 {old_mem.id} 被 {memory_id} 合并（相似度: {sim_score:.4f}）")
 
         # 插入新记忆到 LanceDB
         table = self._get_memories_table()
@@ -1078,6 +1078,7 @@ class MemoryCRUD:
 
                 # 更新记录（LanceDB 不支持 update，需要删除后重新插入）
                 table.delete(f"id = '{existing.id}'")
+                old_confidence = existing.confidence  # 保存旧值用于日志
                 existing.confidence = confidence
                 existing.source_memory_id = source_memory_id
                 if description:
@@ -1085,12 +1086,12 @@ class MemoryCRUD:
                 existing.updated_at = now
                 table.add([existing.to_dict()])
 
-                logger.info("lance_crud", "更新关系置信度: {} -> {} -> {} ({:.2f} -> {:.2f})", {"source": source, "relation_type": relation_type, "target": target, "old": existing.confidence, "new": confidence})
+                logger.info("lance_crud", f"更新关系置信度: {source} -> {relation_type} -> {target} ({old_confidence:.2f} -> {confidence:.2f})")
 
                 # 返回更新后的关系
                 return self.get_relation(existing.id)
             else:
-                logger.debug("lance_crud", "关系已存在，置信度更低，跳过: {} -> {} -> {}", {"source": source, "relation_type": relation_type, "target": target})
+                logger.debug("lance_crud", f"关系已存在，置信度更低，跳过: {source} -> {relation_type} -> {target}")
                 return existing
 
         # 创建新关系
@@ -1115,7 +1116,7 @@ class MemoryCRUD:
         table = self._get_relations_table()
         table.add([relation.to_dict()])
 
-        logger.info("lance_crud", "创建新关系: {} -> {} -> {}", {"source": source, "relation_type": relation_type, "target": target})
+        logger.info("lance_crud", f"创建新关系: {source} -> {relation_type} -> {target}")
         return relation
     
     def get_relation_by_triple(

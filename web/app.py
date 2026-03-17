@@ -702,6 +702,10 @@ def search():
         limit = int(request.args.get('limit', 20))
         time_filter = request.args.get('time', '')
 
+        # LanceDB 不支持 limit <= 0，设置默认值
+        if limit <= 0:
+            limit = 20
+
         if not query and mode != 'entity':
             return jsonify({"success": False, "error": "缺少搜索关键词"}), 400
 
@@ -1073,29 +1077,9 @@ def get_graph_data():
                     if relation.confidence > entity_pair_relations[relation_key]["confidence"]:
                         entity_pair_relations[relation_key]["confidence"] = relation.confidence
 
-        # 为每个实体对的多条关系添加曲率偏移，避免叠放
-        # 先按实体对分组
-        pair_groups = {}
-        for relation_key, rel in entity_pair_relations.items():
-            pair_key = f"{min(rel['source'], rel['target'])}-{max(rel['source'], rel['target'])}"
-            if pair_key not in pair_groups:
-                pair_groups[pair_key] = []
-            pair_groups[pair_key].append(rel)
-
-        # 为每个实体对的多条关系添加曲率
-        for pair_key, relation_list in pair_groups.items():
-            count = len(relation_list)
-
-            for i, rel in enumerate(relation_list):
-                rel_copy = rel.copy()
-                if count == 1:
-                    # ✅ 单个关系也添加 curvature 兜底
-                    rel_copy["curvature"] = 0
-                else:
-                    # 多条关系：添加曲率偏移，使它们展开不叠放
-                    curvature = (i - (count - 1) / 2) * 0.3
-                    rel_copy["curvature"] = curvature
-                links.append(rel_copy)
+        # 直接添加所有关系到 links（curvature 由前端 3D 渲染层处理）
+        for rel in entity_pair_relations.values():
+            links.append(rel.copy())
         
         # 统计信息
         type_counts = {}

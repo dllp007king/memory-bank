@@ -401,6 +401,10 @@
         let graphData = { nodes: [], links: [] };
         let showLabels = true;
         let highlightedNode = null;
+        let curveLinks = [];
+        let raycaster = new THREE.Raycaster();
+        let mouse = new THREE.Vector2();
+        let hoveredLinkGroup = null;
 
         let graphParams = {
             linkDistance: 150,
@@ -516,6 +520,7 @@
             const group = new THREE.Group();
             const sprite = createSimpleLabel(text, options);
             sprite.userData.isLabel = true;
+            sprite.position.y = sphereRadius + 10;
             group.add(sprite);
             group.userData.isLabel = true;
             group.userData.labelSprite = sprite;
@@ -592,8 +597,9 @@
                     renderLegend(graphData.stats.type_counts);
                     graphData.degreeMap = calculateDegreeCentrality(graphData.nodes, graphData.links);
 
-                    // 统计实体间的连线数量
+                    // 统计实体间的连线数量并分配 curveIndex
                     const pairCounts = {};
+                    const pairIndices = {};
                     graphData.links.forEach(link => {
                         const s = typeof link.source === 'object' ? link.source.id : link.source;
                         const t = typeof link.target === 'object' ? link.target.id : link.target;
@@ -605,6 +611,10 @@
                         const t = typeof link.target === 'object' ? link.target.id : link.target;
                         const key = s < t ? `${s}-${t}` : `${t}-${s}`;
                         link.pairCount = pairCounts[key] || 1;
+                        if (link.pairCount > 1) {
+                            pairIndices[key] = (pairIndices[key] || 0);
+                            link.curveIndex = pairIndices[key]++;
+                        }
                     });
 
                     // 为3D添加z坐标初始化
@@ -778,6 +788,9 @@
                             labelGroup.userData.isLabel = true;
                             labelGroup.userData.nodeId = node.id;
                             labelGroup.userData.nodeSize = size;
+                            if (labelGroup.userData.labelSprite) {
+                                labelGroup.userData.labelSprite.userData.nodeId = node.id;
+                            }
                             group.add(labelGroup);
 
                             group.userData.nodeId = node.id;
@@ -788,25 +801,181 @@
                     .linkTarget('target')
                     .linkLabel(link => relationTypes[link.type] || link.type)
                     .linkColor(link => link.color)
-                    .linkWidth(2)
-                    .linkOpacity(0.6)
-                    .linkDirectionalParticles(2)
+                    .linkWidth(0.5)
+                    .linkOpacity(0.01)
+                    .linkDirectionalParticles(0)
                     .linkDirectionalParticleSpeed(0.01)
-                    .linkDirectionalParticleWidth(2)
+                    .linkDirectionalParticleWidth(0)
                     .linkThreeObjectExtend(true)
                     .linkThreeObject(link => {
                         const relName = relationTypes[link.type] || link.type;
-                        const sprite = createTextSprite(relName, { fontSize: 28, textColor: '#ffffff', outlineColor: '#000000' });
+                        const pairCount = link.pairCount || 1;
+                        const curveIndex = link.curveIndex !== undefined ? link.curveIndex : 0;
+                        
+                        const group = new THREE.Group();
+                        
+                        const tubeMaterial = new THREE.MeshBasicMaterial({ 
+                            color: link.color || '#64748b',
+                            transparent: true,
+                            opacity: 0.4
+                        });
+                        const tubeGeometry = new THREE.TubeGeometry(
+                            new THREE.CatmullRomCurve3([new THREE.Vector3(0,0,0), new THREE.Vector3(1,1,1)]),
+                            20, 1.8, 8, false
+                        );
+                        const tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
+                        tube.frustumCulled = false;
+                        group.add(tube);
+                        group.userData.curveTube = tube;
+                        
+                        const hitMaterial = new THREE.MeshBasicMaterial({ 
+                            visible: false
+                        });
+                        const hitGeometry = new THREE.TubeGeometry(
+                            new THREE.CatmullRomCurve3([new THREE.Vector3(0,0,0), new THREE.Vector3(1,1,1)]),
+                            20, 8, 8, false
+                        );
+                        const hitTube = new THREE.Mesh(hitGeometry, hitMaterial);
+                        hitTube.frustumCulled = false;
+                        group.add(hitTube);
+                        group.userData.hitTube = hitTube;
+                        
+                        const particleGeometry = new THREE.BufferGeometry();
+                        const particleCount = 6;
+                        const positions = new Float32Array(particleCount * 3);
+                        for (let i = 0; i < particleCount * 3; i++) positions[i] = 0;
+                        particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                        const particleMaterial = new THREE.PointsMaterial({ 
+                            color: '#ffffff', 
+                            size: 4, 
+                            transparent: true, 
+                            opacity: 0.9
+                        });
+                        const particles = new THREE.Points(particleGeometry, particleMaterial);
+                        group.add(particles);
+                        group.userData.particles = particles;
+                        group.userData.particlePhase = Math.random() * Math.PI * 2;
+                        
+                        const sprite = createTextSprite(relName, { fontSize: 24, textColor: '#ffffff', outlineColor: '#000000' });
                         sprite.userData.isLinkLabel = true;
-                        return sprite;
+                        sprite.userData.linkPairCount = pairCount;
+                        sprite.userData.linkCurveIndex = curveIndex;
+                        sprite.userData.linkLabel = true;
+                        group.add(sprite);
+                        
+                        group.userData.isLinkGroup = true;
+                        group.userData.linkPairCount = pairCount;
+                        group.userData.linkCurveIndex = curveIndex;
+                        group.userData.linkColor = link.color || '#64748b';
+                        group.userData.labelSprite = sprite;
+                        group.userData.linkData = { type: link.type, confidence: link.confidence || 0.8 };
+                        group.userData.sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+                        group.userData.targetId = typeof link.target === 'object' ? link.target.id : link.target;
+                        
+                        curveLinks.push(group);
+                        
+                        return group;
                     })
-                    .linkPositionUpdate((sprite, { start, end }) => {
-                        const midPos = {
-                            x: (start.x + end.x) / 2,
-                            y: (start.y + end.y) / 2,
-                            z: (start.z + end.z) / 2
-                        };
-                        sprite.position.set(midPos.x, midPos.y, midPos.z);
+                    .linkPositionUpdate((group, { start, end }) => {
+                        const sprite = group.userData.labelSprite;
+                        const midX = (start.x + end.x) / 2;
+                        const midY = (start.y + end.y) / 2;
+                        const midZ = (start.z + end.z) / 2;
+                        
+                        const pairCount = group.userData.linkPairCount || 1;
+                        const curveIndex = group.userData.linkCurveIndex !== undefined ? group.userData.linkCurveIndex : 0;
+                        
+                        const dx = end.x - start.x;
+                        const dy = end.y - start.y;
+                        const dz = end.z - start.z;
+                        const length = Math.sqrt(dx*dx + dy*dy + dz*dz) || 1;
+                        
+                        const abX = dx / length;
+                        const abY = dy / length;
+                        const abZ = dz / length;
+                        
+                        let perp1X, perp1Y, perp1Z;
+                        if (Math.abs(abY) < 0.9) {
+                            perp1X = 0;
+                            perp1Y = 1;
+                            perp1Z = 0;
+                        } else {
+                            perp1X = 1;
+                            perp1Y = 0;
+                            perp1Z = 0;
+                        }
+                        
+                        perp1X -= abX * (perp1X * abX + perp1Y * abY + perp1Z * abZ);
+                        perp1Y -= abY * (perp1X * abX + perp1Y * abY + perp1Z * abZ);
+                        perp1Z -= abZ * (perp1X * abX + perp1Y * abY + perp1Z * abZ);
+                        const perp1Len = Math.sqrt(perp1X*perp1X + perp1Y*perp1Y + perp1Z*perp1Z) || 1;
+                        perp1X /= perp1Len;
+                        perp1Y /= perp1Len;
+                        perp1Z /= perp1Len;
+                        
+                        const perp2X = abY * perp1Z - abZ * perp1Y;
+                        const perp2Y = abZ * perp1X - abX * perp1Z;
+                        const perp2Z = abX * perp1Y - abY * perp1X;
+                        
+                        let cpX, cpY, cpZ;
+                        
+                        if (pairCount === 1 || curveIndex === 0) {
+                            cpX = midX;
+                            cpY = midY;
+                            cpZ = midZ;
+                        } else {
+                            const angle = (curveIndex / pairCount) * Math.PI * 2;
+                            const cosA = Math.cos(angle);
+                            const sinA = Math.sin(angle);
+                            
+                            const normalX = cosA * perp1X + sinA * perp2X;
+                            const normalY = cosA * perp1Y + sinA * perp2Y;
+                            const normalZ = cosA * perp1Z + sinA * perp2Z;
+                            
+                            const curveHeight = length * 0.3;
+                            
+                            cpX = midX + normalX * curveHeight;
+                            cpY = midY + normalY * curveHeight;
+                            cpZ = midZ + normalZ * curveHeight;
+                        }
+                        
+                        if (group.userData.curveTube) {
+                            const curve = new THREE.QuadraticBezierCurve3(
+                                new THREE.Vector3(start.x, start.y, start.z),
+                                new THREE.Vector3(cpX, cpY, cpZ),
+                                new THREE.Vector3(end.x, end.y, end.z)
+                            );
+                            const tubeGeometry = new THREE.TubeGeometry(curve, 30, 1.8, 8, false);
+                            group.userData.curveTube.geometry.dispose();
+                            group.userData.curveTube.geometry = tubeGeometry;
+                            
+                            if (group.userData.hitTube) {
+                                const hitGeometry = new THREE.TubeGeometry(curve, 30, 8, 8, false);
+                                group.userData.hitTube.geometry.dispose();
+                                group.userData.hitTube.geometry = hitGeometry;
+                            }
+                            
+                            const labelPos = curve.getPoint(0.5);
+                            sprite.position.set(labelPos.x, labelPos.y, labelPos.z);
+                            
+                            if (group.userData.particles) {
+                                group.userData.particlePhase = (group.userData.particlePhase || 0) + 0.0075;
+                                const positions = group.userData.particles.geometry.attributes.position.array;
+                                const particleCount = positions.length / 3;
+                                for (let i = 0; i < particleCount; i++) {
+                                    const t = ((group.userData.particlePhase + i / particleCount) % 1);
+                                    const point = curve.getPoint(t);
+                                    positions[i * 3] = point.x;
+                                    positions[i * 3 + 1] = point.y;
+                                    positions[i * 3 + 2] = point.z;
+                                }
+                                group.userData.particles.geometry.attributes.position.needsUpdate = true;
+                            }
+                        } else {
+                            sprite.position.set(cpX, cpY, cpZ);
+                        }
+                        
+                        return true;
                     })
                     .onNodeClick(onNodeClick)
                     .onNodeDragEnd(node => {
@@ -1031,17 +1200,60 @@
             const labelDistance = graphParams.labelDistance;
 
             window.graph.scene().traverse((obj) => {
-                if (obj.userData && obj.userData.isLabel) {
-                    const nodeId = obj.userData.nodeId;
-                    const node = graphData.nodes.find(n => n.id === nodeId);
-                    if (!node || node.x === undefined) {
-                        obj.visible = false;
-                        return;
+                if (obj.userData && obj.userData.isLabel && obj.userData.nodeId) {
+                    const node = graphData.nodes.find(n => n.id === obj.userData.nodeId);
+                    if (node && node.x !== undefined) {
+                        const distance = camera.position.distanceTo(new THREE.Vector3(node.x, node.y, node.z));
+                        const visible = distance < labelDistance;
+                        obj.visible = visible;
                     }
-                    const distance = camera.position.distanceTo(new THREE.Vector3(node.x, node.y, node.z));
-                    obj.visible = distance < labelDistance;
+                }
+                
+                if (obj.userData && obj.userData.linkLabel) {
+                    const spritePos = obj.position;
+                    if (spritePos) {
+                        const distance = camera.position.distanceTo(spritePos);
+                        obj.visible = distance < labelDistance;
+                    }
                 }
             });
+
+            const hitTubes = [];
+            const groupMap = new Map();
+            curveLinks.forEach(group => {
+                if (group.userData.hitTube) {
+                    hitTubes.push(group.userData.hitTube);
+                    groupMap.set(group.userData.hitTube, group);
+                }
+            });
+            
+            if (hitTubes.length > 0) {
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObjects(hitTubes, false);
+                
+                if (intersects.length > 0) {
+                    const hitGroup = groupMap.get(intersects[0].object);
+                    if (hitGroup && hitGroup !== hoveredLinkGroup) {
+                        hoveredLinkGroup = hitGroup;
+                        const linkData = hitGroup.userData.linkData;
+                        const sourceNode = graphData.nodes.find(n => n.id === hitGroup.userData.sourceId);
+                        const targetNode = graphData.nodes.find(n => n.id === hitGroup.userData.targetId);
+                        const relName = relationTypes[linkData.type] || linkData.type;
+                        
+                        const tooltip = document.getElementById('tooltip');
+                        tooltip.innerHTML = `<strong>${relName}</strong><br>从: ${sourceNode?.name || '?'}<br>到: ${targetNode?.name || '?'}<br>置信度: ${(linkData.confidence * 100).toFixed(0)}%`;
+                        tooltip.style.display = 'block';
+                        document.body.style.cursor = 'pointer';
+                    }
+                } else if (hoveredLinkGroup) {
+                    hoveredLinkGroup = null;
+                    const tooltip = document.getElementById('tooltip');
+                    if (!highlightedNode) {
+                        tooltip.style.display = 'none';
+                        document.body.style.cursor = 'default';
+                    }
+                }
+            }
 
             updateComets();
             requestAnimationFrame(updateLabelVisibility);
@@ -1273,6 +1485,11 @@
         }
 
         document.addEventListener('DOMContentLoaded', loadGraph);
+        
+        document.addEventListener('mousemove', (event) => {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        });
     </script>
 </body>
 </html>
