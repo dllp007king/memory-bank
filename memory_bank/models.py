@@ -15,7 +15,7 @@ class FactKind(Enum):
     BIO = "B"          # 经验/传记
     OPINION = "O"      # 意见/偏好
     SUMMARY = "S"      # 总结
-    WISH = "W"         # 愿望
+    WISH = "H"         # 愿望（使用 H = Hope）
 
 
 @dataclass
@@ -61,34 +61,4 @@ class Fact:
             updated_at=datetime.fromisoformat(data["updated_at"]) if "updated_at" in data else datetime.now(),
         )
 
-
-@dataclass
-class Entity:
-    """实体"""
-    slug: str = ""
-    name: str = ""
-    summary: str = ""
-    entity_type: str = "PERSON"
-    first_seen: datetime = field(default_factory=datetime.now)
-    last_updated: datetime = field(default_factory=datetime.now)
-
-    def to_dict(self) -> dict:
-        return {
-            "slug": self.slug,
-            "name": self.name,
-            "summary": self.summary,
-            "entity_type": self.entity_type,
-            "first_seen": self.first_seen.isoformat(),
-            "last_updated": self.last_updated.isoformat(),
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "Entity":
-        return cls(
-            slug=data.get("slug", ""),
-            name=data.get("name", ""),
-            summary=data.get("summary", ""),
-            entity_type=data.get("entity_type", "PERSON"),
-            first_seen=datetime.fromisoformat(data["first_seen"]) if "first_seen" in data else datetime.now(),
-            last_updated=datetime.fromisoformat(data["last_updated"]) if "last_updated" in data else datetime.now(),
-        )
+# Entity 类已迁移到 lance_crud.py（支持 aliases 和 vector 字段）

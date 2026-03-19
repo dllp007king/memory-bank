@@ -136,14 +136,18 @@ def tokenize(text: str, mode: str = "search") -> List[str]:
     
     Args:
         text: 待分词文本
-        mode: 模式 ("search" / "cut" / "cut_all")
+        mode: 模式
+            - "search": 搜索引擎模式（lcut_for_search），用于查询，召回率高
+            - "index":  全模式（cut_all=True），用于建索引，覆盖所有可能词组
+            - "cut_all": 同 index
+            - "cut":    精确模式（默认）
     
     Returns:
         分词结果列表
     """
     if mode == "search":
         return jieba.lcut_for_search(text)
-    elif mode == "cut_all":
+    elif mode in ("index", "cut_all"):
         return jieba.lcut(text, cut_all=True)
     else:
         return jieba.lcut(text)

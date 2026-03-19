@@ -172,15 +172,90 @@ ENTITY_ROLE_NAMES = {
 }
 
 
-# 实体类型常量
+# 实体类型常量（统一来源）
 class EntityType:
+    """
+    实体类型常量
+    
+    所有实体类型定义的单一来源，确保前后端一致性。
+    """
+    # 核心类型
     PERSON = "PERSON"      # 人物
+    ORG = "ORG"            # 组织（别名：ORGANIZATION）
     PLACE = "PLACE"        # 地点
-    ORG = "ORG"            # 组织
     EVENT = "EVENT"        # 事件
+    CONCEPT = "CONCEPT"    # 概念
+    
+    # 扩展类型（实际使用中）
+    TOOL = "TOOL"          # 工具（vscode, git, docker 等）
+    SYSTEM = "SYSTEM"      # 系统（linux, server, gateway 等）
+    PROJECT = "PROJECT"    # 项目（memory-bank, web-ui 等）
+    GAME = "GAME"          # 游戏（魔兽世界 等）
+    
+    # 其他类型（兼容旧数据）
     TOPIC = "TOPIC"        # 主题
     PRODUCT = "PRODUCT"    # 产品
-    CONCEPT = "CONCEPT"    # 概念
+    DOCUMENT = "DOCUMENT"  # 文档
+    CREDENTIAL = "CREDENTIAL"  # 凭证/密钥
+    SCRIPT = "SCRIPT"      # 脚本
+    DATABASE = "DATABASE"  # 数据库
+
+
+# 实体类型的中文名称映射
+ENTITY_TYPE_NAMES = {
+    "PERSON": "人物",
+    "ORG": "组织",
+    "ORGANIZATION": "组织",
+    "PLACE": "地点",
+    "EVENT": "事件",
+    "CONCEPT": "概念",
+    "TOOL": "工具",
+    "SYSTEM": "系统",
+    "PROJECT": "项目",
+    "GAME": "游戏",
+    "TOPIC": "主题",
+    "PRODUCT": "产品",
+    "DOCUMENT": "文档",
+    "CREDENTIAL": "凭证",
+    "SCRIPT": "脚本",
+    "DATABASE": "数据库",
+}
+
+
+# 实体类型颜色配置（供前端使用）
+ENTITY_TYPE_COLORS = {
+    "PERSON": "#3b82f6",   # 蓝色
+    "ORG": "#22c55e",      # 绿色
+    "PLACE": "#f59e0b",    # 橙色
+    "TOOL": "#8b5cf6",     # 紫色
+    "SYSTEM": "#ec4899",   # 粉色
+    "PROJECT": "#06b6d4",  # 青色
+    "CONCEPT": "#6366f1",  # 靛蓝色
+    "EVENT": "#ef4444",    # 红色
+    "GAME": "#84cc16",     # 黄绿色
+    "DOCUMENT": "#14b8a6", # 青绿色
+    "DATABASE": "#f97316", # 橙红色
+    "SCRIPT": "#a855f7",   # 紫罗兰色
+    "CREDENTIAL": "#dc2626", # 深红色
+}
+
+
+# 实体类型图标（供前端使用）
+ENTITY_TYPE_ICONS = {
+    "PERSON": "👤",
+    "ORG": "🏢",
+    "PLACE": "📍",
+    "TOOL": "🔧",
+    "SYSTEM": "⚙️",
+    "PROJECT": "📁",
+    "CONCEPT": "💡",
+    "EVENT": "🎯",
+    "GAME": "🎮",
+    "DOCUMENT": "📄",
+    "DATABASE": "🗄️",
+    "SCRIPT": "📜",
+    "CREDENTIAL": "🔑",
+}
 
 
 # 关系类型常量
@@ -233,13 +308,5 @@ RELATION_TYPE_NAMES = {
     "FORMERLY_MARRIED": "曾婚",
 }
 
-# 实体类型的中文名称映射
-ENTITY_TYPE_NAMES = {
-    "PERSON": "人物",
-    "PLACE": "地点",
-    "ORG": "组织",
-    "EVENT": "事件",
-    "TOPIC": "主题",
-    "PRODUCT": "产品",
-    "CONCEPT": "概念",
-}
+# 实体类型的中文名称映射（已移动到 EntityType 类后面）
+# 见上方 ENTITY_TYPE_NAMES 定义

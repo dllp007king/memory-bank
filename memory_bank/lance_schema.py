@@ -6,7 +6,7 @@ LanceDB Schema 定义
 - entities: 实体表
 - relations: 关系表（新增）
 
-向量维度: 1536 (OpenAI text-embedding-3-small)
+向量维度: 2560 (GLM-4 embedding)
 """
 
 import pyarrow as pa
@@ -33,8 +33,8 @@ MEMORIES_SCHEMA: pa.Schema = pa.schema([
     # 内容
     pa.field("content", pa.string(), nullable=False, metadata={"description": "记忆内容"}),
     
-    # 类型 (W=世界事实, B=经验/传记, O=意见/偏好, S=总结)
-    pa.field("kind", pa.string(), nullable=False, metadata={"description": "事实类型: W/B/O/S"}),
+    # 类型 (fact=事实, experience=经验, preference=偏好, summary=总结)
+    pa.field("kind", pa.string(), nullable=False, metadata={"description": "记忆类型: fact/experience/preference/summary"}),
     
     # 时间戳
     pa.field("timestamp", pa.timestamp("us"), nullable=False, metadata={"description": "记录时间戳"}),
@@ -54,7 +54,7 @@ MEMORIES_SCHEMA: pa.Schema = pa.schema([
     
     # 向量嵌入
     pa.field("embedding", pa.list_(pa.float32(), EMBEDDING_DIM), nullable=True, 
-             metadata={"description": "向量嵌入 (1536维)"}),
+             metadata={"description": "向量嵌入 (2560维)"}),
     
     # 关联实体列表（存储 entity slug）
     pa.field("entities", pa.list_(pa.string()), nullable=True, 
@@ -71,6 +71,10 @@ MEMORIES_SCHEMA: pa.Schema = pa.schema([
     # 标签列表
     pa.field("tags", pa.list_(pa.string()), nullable=True,
              metadata={"description": "标签列表"}),
+
+    # jieba 分词内容（FTS 索引用，存储分词后的空格分隔 tokens）
+    pa.field("content_tokens", pa.string(), nullable=True,
+             metadata={"description": "content 经 jieba 分词后的空格分隔字符串，供 FTS 索引使用"}),
 
     # === Lifecycle Fields (新增) ===
 
@@ -124,7 +128,7 @@ ENTITIES_SCHEMA: pa.Schema = pa.schema([
     
     # 向量嵌入
     pa.field("embedding", pa.list_(pa.float32(), EMBEDDING_DIM), nullable=True, 
-             metadata={"description": "实体名称的向量嵌入 (1536维)"}),
+             metadata={"description": "实体名称的向量嵌入 (2560维)"}),
     
     # 别名列表
     pa.field("aliases", pa.list_(pa.string()), nullable=True, 
@@ -282,41 +286,10 @@ def print_schema_summary() -> None:
 
 
 # ============================================================================
-# 关系类型常量
+# 类型常量（从 entity_types.py 导入，确保单一来源）
 # ============================================================================
 
-class RelationType:
-    """关系类型常量"""
-    KNOWS = "KNOWS"              # 认识
-    WORKS_WITH = "WORKS_WITH"    # 共事
-    RELATED_TO = "RELATED_TO"    # 相关
-    LOCATED_AT = "LOCATED_AT"    # 位于
-    PART_OF = "PART_OF"          # 属于
-    MANAGES = "MANAGES"          # 管理
-    CREATED = "CREATED"          # 创建
-    MENTIONS = "MENTIONS"        # 提及
-    WORKS_AT = "WORKS_AT"        # 工作于
-    REPORTS_TO = "REPORTS_TO"    # 汇报给
-    WORKS_ON = "WORKS_ON"        # 参与项目
-    INVESTED_BY = "INVESTED_BY"  # 被投资
-    FRIENDS_WITH = "FRIENDS_WITH"  # 友好关系
-    ENEMIES_WITH = "ENEMIES_WITH"  # 敌对关系
-    MANAGED_BY = "MANAGED_BY"    # 被管理
-
-
-# ============================================================================
-# 实体类型常量
-# ============================================================================
-
-class EntityType:
-    """实体类型常量"""
-    PERSON = "PERSON"      # 人物
-    PLACE = "PLACE"        # 地点
-    ORG = "ORG"            # 组织
-    EVENT = "EVENT"        # 事件
-    TOPIC = "TOPIC"        # 主题
-    PRODUCT = "PRODUCT"    # 产品
-    CONCEPT = "CONCEPT"    # 概念
+from .entity_types import EntityType, RelationType, ENTITY_TYPE_NAMES, RELATION_TYPE_NAMES
 
 
 if __name__ == "__main__":

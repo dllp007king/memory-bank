@@ -66,7 +66,9 @@ memory-bank-release/
 
 默认配置：
 - 服务端口: 8088
-- 数据目录: ./lancedb
+- 数据目录: `~/.openclaw/workspace/.memory/`
+  - SQLite: `index.sqlite` (FTS5 全文索引)
+  - LanceDB: `lancedb/` (向量数据库)
 
 ## systemd 服务
 
@@ -81,10 +83,31 @@ sudo systemctl start memory-bank
 ## 常见问题
 
 ### Q: 启动失败，提示模块找不到？
-A: 确保已激活虚拟环境并安装所有依赖。
+A: 确保已激活虚拟环境并安装所有依赖：
+```bash
+source .venv/bin/activate
+pip install -r requirements.txt
+pip install lancedb jieba flask flask-cors
+```
 
 ### Q: 端口被占用？
 A: 修改 `web/app.py` 中的端口配置，或设置环境变量 `PORT=8089`。
 
 ### Q: 数据存储在哪里？
-A: 默认在 `./lancedb` 目录，可在配置中修改。
+A: 默认在 `~/.openclaw/workspace/.memory/` 目录：
+- `index.sqlite` - SQLite 数据库 + FTS5 索引
+- `lancedb/memories.lance/` - 记忆向量
+- `lancedb/entities.lance/` - 实体向量
+- `lancedb/relations.lance/` - 关系数据
+
+### Q: 如何备份数据？
+A: 运行备份脚本：
+```bash
+python3 scripts/backup_lancedb.py
+```
+
+### Q: 嵌入服务不可用？
+A: 确保 llm.cpp HTTP Server 正在运行：
+```bash
+curl http://localhost:8080/v1/embeddings
+```

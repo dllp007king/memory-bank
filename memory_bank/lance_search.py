@@ -135,19 +135,34 @@ class MemorySearch:
         """获取查询文本的向量"""
         return embed_single(query, self._embedding_config)
     
+    @staticmethod
+    def _parse_datetime(val, default=None):
+        """将 str 或 datetime 统一转换为 datetime 对象"""
+        if val is None:
+            return default or datetime.now()
+        if isinstance(val, datetime):
+            return val
+        if isinstance(val, str):
+            return datetime.fromisoformat(val)
+        # 处理 pyarrow timestamp scalar 等其他类型
+        try:
+            return val.as_py() if hasattr(val, 'as_py') else datetime.now()
+        except Exception:
+            return default or datetime.now()
+
     def _row_to_fact(self, row: Dict[str, Any]) -> Fact:
         """将 LanceDB 行转换为 Fact 对象"""
         return Fact(
             id=row.get("id", ""),
             kind=row.get("kind", "W"),
             content=row.get("content", ""),
-            timestamp=datetime.fromisoformat(row["timestamp"]) if "timestamp" in row else datetime.now(),
+            timestamp=self._parse_datetime(row.get("timestamp")),
             source_path=row.get("source_path", ""),
             source_line=row.get("source_line", 0),
             entities=row.get("entities", []) if isinstance(row.get("entities"), list) else [],
             confidence=row.get("confidence", 1.0),
-            created_at=datetime.fromisoformat(row["created_at"]) if "created_at" in row else datetime.now(),
-            updated_at=datetime.fromisoformat(row["updated_at"]) if "updated_at" in row else datetime.now(),
+            created_at=self._parse_datetime(row.get("created_at")),
+            updated_at=self._parse_datetime(row.get("updated_at")),
         )
     
     # ==================== 向量搜索 ====================
@@ -264,17 +279,20 @@ class MemorySearch:
             return []
         
         # 使用 jieba 对查询进行分词处理（搜索引擎模式，提高召回率）
+        # FTS 索引建在 content_tokens 字段（jieba 分词后的空格分隔 tokens）
+        # 搜索时对 query 同样做 jieba 分词，确保与索引格式匹配
         query_tokens = tokenize_to_string(query, mode="search")
         logger.debug(f"FTS 查询（分词后）: {query_tokens}")
         
         try:
-            # 使用 LanceDB 的全文搜索（支持分词后的查询）
+            # 使用 LanceDB 的全文搜索，搜索 content_tokens 字段
             search = self.table.search(
                 query_tokens,
                 query_type="fts",
+                fts_columns="content_tokens",
             )
             
-            # 添加预过滤（注意：FTS 可能不支持 filter，使用 where）
+            # 添加预过滤
             if filter_str:
                 try:
                     search = search.where(filter_str)
@@ -295,27 +313,6 @@ class MemorySearch:
                     score=score,
                     match_type="fts",
                 ))
-            
-            # 中文 fallback: 如果 FTS 无结果，使用简单字符串匹配
-            if not search_results and any('\u4e00' <= c <= '\u9fff' for c in query):
-                logger.info(f"FTS 无结果，使用字符串匹配 fallback: {query}")
-                all_data = self.table.to_pandas()
-                matches = []
-                for _, row in all_data.iterrows():
-                    content = row.get('content', '')
-                    if query in content:
-                        fact = self._row_to_fact(row.to_dict())
-                        # 根据匹配位置计算分数（越靠前分数越高）
-                        pos = content.find(query)
-                        score = 1.0 - (pos / len(content)) if pos >= 0 else 0.5
-                        matches.append(SearchResult(
-                            fact=fact,
-                            score=score,
-                            match_type="fts",
-                        ))
-                # 按分数排序
-                matches.sort(key=lambda x: x.score, reverse=True)
-                search_results = matches[:limit]
             
             return search_results
             

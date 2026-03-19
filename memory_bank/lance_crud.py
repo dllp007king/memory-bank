@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, field, asdict
 import json
+import logging
 import lancedb
 import pyarrow as pa
 from pathlib import Path
@@ -16,16 +17,15 @@ from pathlib import Path
 from .embedding import embed_single, get_config
 from .lifecycle import infer_decay_rate, DEFAULT_DECAY_RATE, effective_confidence
 from .lance_schema import RELATIONS_SCHEMA, MEMORIES_SCHEMA, ENTITIES_SCHEMA
-from .logger import get_logger
 from .similarity import calculate_similarity, get_update_strategy, UpdateStrategy, find_similar_memories
 from .contradiction import detect_contradiction, handle_contradiction, ContradictionResolution
 from .entity_types import EntityRef, RelationRef, EntityType, RelationType
 from .slug_generator import generate_slug, parse_slug, get_entity_type_from_slug, encode_base62, decode_base62, get_type_prefix
 
-logger = get_logger()
+logger = logging.getLogger(__name__)
 
 # jieba 中文分词（使用共享词典管理器）
-from .jieba_dict import add_word, add_words
+from .jieba_dict import add_word, add_words, tokenize_to_string
 
 
 # ==================== 数据模型 ====================
@@ -50,28 +50,50 @@ class Memory:
     superseded_by: str = ""
     access_count: int = 0
     last_accessed_at: str = ""
+    # 标签列表
+    tags: List[str] = field(default_factory=list)
+
+    def _strip_z(self, ts: str) -> str:
+        """Strip trailing Z from ISO timestamp for LanceDB timezone-naive fields."""
+        return ts.rstrip("Z") if ts else ""
 
     def to_dict(self) -> dict:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")
+        ts = self._strip_z(self.created_at) or now
+        # 对 content 做 jieba 分词，存入 content_tokens 供 FTS 索引使用
+        try:
+            content_tokens = tokenize_to_string(self.content, mode="index")
+        except Exception:
+            content_tokens = self.content
         return {
             "id": self.id,
             "content": self.content,
-            "memory_type": self.memory_type,
-            # 实体列表：字符串（兼容）或对象（转换为 JSON 字符串）
+            "content_tokens": content_tokens,
+            # LanceDB schema: kind (not memory_type)
+            "kind": self.memory_type,
+            # LanceDB schema: timestamp[us] - timezone-naive (no 'Z')
+            "timestamp": ts,
+            # LanceDB schema: source_path
+            "source_path": self.source,
+            "source_line": 0,
+            # LanceDB schema: embedding (fixed_size_list[2560])
+            "embedding": self.vector,
+            # entities 存为字符串列表（slug）
             "entities": self._entities_to_storage(),
-            # 关系列表：字符串（简化格式）或对象（转换为简化字符串）
-            "relations": self._relations_to_storage(),
             "confidence": self.confidence,
-            "source": self.source,
             "importance": self.importance,
-            "vector": self.vector,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
+            "version": 1,
+            # LanceDB schema: timestamp[us] - timezone-naive
+            "created_at": ts,
+            "updated_at": self._strip_z(self.updated_at) or now,
             # Lifecycle fields
             "decay_rate": self.decay_rate,
             "lifecycle_state": self.lifecycle_state,
             "superseded_by": self.superseded_by,
             "access_count": self.access_count,
-            "last_accessed_at": self.last_accessed_at,
+            "last_accessed_at": self._strip_z(self.last_accessed_at) or now,
+            "tags": self.tags,
         }
     
     def _entities_to_storage(self) -> list:
@@ -147,21 +169,26 @@ class Memory:
         return cls(
             id=data.get("id", ""),
             content=data.get("content", ""),
-            memory_type=data.get("memory_type", "fact"),
+            # LanceDB schema: kind
+            memory_type=data.get("kind", data.get("memory_type", "fact")),
             entities=data.get("entities", []),
             relations=data.get("relations", []),
-            confidence=data.get("confidence", 1.0),
-            source=data.get("source", ""),
-            importance=data.get("importance", 0.5),
-            vector=data.get("vector"),
-            created_at=data.get("created_at", ""),
-            updated_at=data.get("updated_at", ""),
+            confidence=float(data.get("confidence", 1.0)),
+            # LanceDB schema: source_path
+            source=data.get("source_path", data.get("source", "")),
+            importance=float(data.get("importance", 0.5)),
+            # LanceDB schema: embedding
+            vector=data.get("embedding"),
+            # LanceDB timestamps: stored as strings or datetime
+            created_at=str(data.get("created_at", "")),
+            updated_at=str(data.get("updated_at", "")),
             # Lifecycle fields with defaults
-            decay_rate=data.get("decay_rate", 0.01),
+            decay_rate=float(data.get("decay_rate", 0.01)),
             lifecycle_state=data.get("lifecycle_state", "ACTIVE"),
             superseded_by=data.get("superseded_by", ""),
-            access_count=data.get("access_count", 0),
-            last_accessed_at=data.get("last_accessed_at", ""),
+            access_count=int(data.get("access_count", 0)),
+            last_accessed_at=str(data.get("last_accessed_at", "")),
+            tags=data.get("tags", []),
         )
 
 
@@ -323,6 +350,14 @@ class MemoryCRUD:
                     schema=MEMORIES_SCHEMA,
                     mode="create"
                 )
+            # 确保 FTS 倒排索引存在（建在 content_tokens 字段，支持中文 jieba 分词）
+            try:
+                existing_indices = [idx.name for idx in self._memories_table.list_indices()]
+                if "content_tokens_idx" not in existing_indices:
+                    self._memories_table.create_fts_index("content_tokens", replace=True)
+            except Exception as _fts_err:
+                import logging as _log
+                _log.getLogger(__name__).warning(f"FTS 索引建立失败（不影响向量搜索）: {_fts_err}")
         return self._memories_table
     
     def _get_entities_table(self):
@@ -364,6 +399,15 @@ class MemoryCRUD:
         
         add_words(entities, freq=10)
     
+    def _rebuild_fts_index(self):
+        """在 memories 表数据发生变更后重建 FTS 倒排索引（建在 content_tokens 字段）"""
+        try:
+            table = self._get_memories_table()
+            table.create_fts_index("content_tokens", replace=True)
+            logger.debug("FTS 倒排索引重建完成 (content_tokens)")
+        except Exception as e:
+            logger.warning(f"FTS 倒排索引重建失败（不影响向量搜索）: {e}")
+
     # ==================== 记忆 CRUD ====================
     
     def create_memory(
@@ -440,6 +484,7 @@ class MemoryCRUD:
             access_count=0,
             last_accessed_at="",
             importance=importance,
+            tags=tags or [],
         )
 
         # 生成向量嵌入（在生命周期检测后）
@@ -474,11 +519,11 @@ class MemoryCRUD:
                         table.delete(f"id = '{old_mem.id}'")
                         table.add([old_mem.to_dict()])
                         superseded_memories.append(old_mem.id)
-                        logger.info("lance_crud", f"[Lifecycle] 记忆 {old_mem.id} 被 {memory_id} 取代（矛盾处理）")
+                        logger.info(f"[Lifecycle] 记忆 {old_mem.id} 被 {memory_id} 取代（矛盾处理）")
 
                     elif resolution == ContradictionResolution.KEEP:
                         # 新记忆置信度低，不创建
-                        logger.info("lance_crud", f"[Lifecycle] 跳过新记忆 {memory_id}（旧记忆置信度更高）")
+                        logger.info(f"[Lifecycle] 跳过新记忆 {memory_id}（旧记忆置信度更高）")
                         return old_mem
                     # CONFIRM: 暂时保留两个，后续需要用户确认
 
@@ -489,7 +534,7 @@ class MemoryCRUD:
                     # 覆盖更新：删除旧记忆，插入新记忆
                     table = self._get_memories_table()
                     table.delete(f"id = '{old_mem.id}'")
-                    logger.info("lance_crud", f"[Lifecycle] 记忆 {old_mem.id} 被覆盖（相似度: {sim_score:.4f}）")
+                    logger.info(f"[Lifecycle] 记忆 {old_mem.id} 被覆盖（相似度: {sim_score:.4f}）")
 
                 elif strategy == UpdateStrategy.MERGE and not is_contradiction:
                     # 合并更新：标记旧记忆为 SUPERSEDED
@@ -499,7 +544,7 @@ class MemoryCRUD:
                     table.delete(f"id = '{old_mem.id}'")
                     table.add([old_mem.to_dict()])
                     superseded_memories.append(old_mem.id)
-                    logger.info("lance_crud", f"[Lifecycle] 记忆 {old_mem.id} 被 {memory_id} 合并（相似度: {sim_score:.4f}）")
+                    logger.info(f"[Lifecycle] 记忆 {old_mem.id} 被 {memory_id} 合并（相似度: {sim_score:.4f}）")
 
         # 插入新记忆到 LanceDB
         table = self._get_memories_table()
@@ -531,8 +576,9 @@ class MemoryCRUD:
                         source_memory_id=memory_id
                     )
                 except Exception as e:
-                    logger.error("lance_crud", f"创建关系失败: {e}")
+                    logger.error(f"创建关系失败: {e}")
 
+        self._rebuild_fts_index()
         return memory
     
     def get_memory(self, memory_id: str, update_access: bool = True) -> Optional[Memory]:
@@ -640,7 +686,7 @@ class MemoryCRUD:
             return None
         
         # 更新字段
-        allowed_fields = {"content", "memory_type", "entities", "confidence", "source"}
+        allowed_fields = {"content", "memory_type", "entities", "confidence", "source", "importance", "tags"}
         for key, value in kwargs.items():
             if key in allowed_fields:
                 setattr(memory, key, value)
@@ -656,6 +702,7 @@ class MemoryCRUD:
         table.delete(f"id = '{memory_id}'")
         table.add([memory.to_dict()])
         
+        self._rebuild_fts_index()
         return memory
     
     def delete_memory(self, memory_id: str) -> bool:
@@ -680,6 +727,7 @@ class MemoryCRUD:
         relations_table.delete(f"source_memory_id = '{memory_id}'")
         
         table.delete(f"id = '{memory_id}'")
+        self._rebuild_fts_index()
         return True
 
     def _increment_access_count(self, memory_id: str) -> bool:
@@ -913,10 +961,10 @@ class MemoryCRUD:
         now = datetime.now().isoformat()
 
         # 自动生成 Base62 slug
+        table = self._get_entities_table()
         if slug is None:
             # 获取该类型的下一个计数器值
             type_prefix = get_type_prefix(entity_type)
-            table = self._get_entities_table()
             existing = table.search().to_list()
             max_counter = -1
             for row in existing:
@@ -930,6 +978,18 @@ class MemoryCRUD:
                     except (IndexError, ValueError):
                         pass
             slug = generate_slug(entity_type, max_counter + 1)
+        
+        # 🔒 检查 slug 冲突（精确匹配，防止大小写问题）
+        existing_entity = table.search().where(f"slug = '{slug}'").limit(1).to_list()
+        if existing_entity:
+            # 如果是用户指定的 slug，抛出异常
+            # 如果是自动生成的 slug，尝试生成一个新的
+            logger.warning(f"Slug 冲突检测: slug '{slug}' 已存在")
+            # 自动生成一个新的唯一 slug
+            import time
+            unique_suffix = encode_base62(int(time.time() * 1000) % (62**5))
+            slug = f"{slug}_{unique_suffix}"
+            logger.info(f"自动生成新的 slug: {slug}")
 
         # 生成向量嵌入（基于名称和摘要）
         vector = None
@@ -1086,12 +1146,12 @@ class MemoryCRUD:
                 existing.updated_at = now
                 table.add([existing.to_dict()])
 
-                logger.info("lance_crud", f"更新关系置信度: {source} -> {relation_type} -> {target} ({old_confidence:.2f} -> {confidence:.2f})")
+                logger.info(f"更新关系置信度: {source} -> {relation_type} -> {target} ({old_confidence:.2f} -> {confidence:.2f})")
 
                 # 返回更新后的关系
                 return self.get_relation(existing.id)
             else:
-                logger.debug("lance_crud", f"关系已存在，置信度更低，跳过: {source} -> {relation_type} -> {target}")
+                logger.debug(f"关系已存在，置信度更低，跳过: {source} -> {relation_type} -> {target}")
                 return existing
 
         # 创建新关系
@@ -1116,7 +1176,7 @@ class MemoryCRUD:
         table = self._get_relations_table()
         table.add([relation.to_dict()])
 
-        logger.info("lance_crud", f"创建新关系: {source} -> {relation_type} -> {target}")
+        logger.info(f"创建新关系: {source} -> {relation_type} -> {target}")
         return relation
     
     def get_relation_by_triple(

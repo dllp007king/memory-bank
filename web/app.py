@@ -21,13 +21,9 @@ from memory_bank.lance import LanceConnection
 from memory_bank.lance_crud import MemoryCRUD, get_crud, set_crud
 from memory_bank.lance_search import MemorySearch, get_searcher
 
-# 保留原有的嵌入和 NER 模块
+# 嵌入和生命周期模块
 from memory_bank.embedding import check_server_health, embed_single
-from memory_bank.entity_type_cache import EntityTypeInferencer
-from memory_bank.ner_extractor import extract_entities as ner_extract_entities
-from memory_bank.ner_queue import enqueue_ner, get_queue_stats, enqueue_batch
 from memory_bank.lifecycle import effective_confidence
-from memory_bank.ner_worker import NERWorker
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +42,6 @@ EMBEDDING_DIM = 2560
 _lance_conn = None
 _crud = None
 _searcher = None
-_inferencer = None
-_ner_worker = None
 
 
 def get_lance_conn():
@@ -72,23 +66,6 @@ def get_searcher_instance():
     """获取搜索器实例（每次都重新获取以避免缓存问题）"""
     from memory_bank.lance_search import MemorySearch
     return MemorySearch()  # 每次都创建新实例，避免缓存问题
-
-
-def get_inferencer():
-    """获取实体类型推断器"""
-    global _inferencer
-    if _inferencer is None:
-        # 使用 CRUD 实例作为数据库
-        _inferencer = EntityTypeInferencer(get_crud_instance())
-    return _inferencer
-
-
-def get_ner_worker():
-    """获取 NER Worker 实例"""
-    global _ner_worker
-    if _ner_worker is None:
-        _ner_worker = NERWorker(get_crud_instance())
-    return _ner_worker
 
 
 def get_time_range(time_filter):
@@ -180,15 +157,35 @@ def get_facts():
         # 分页
         paginated_memories = memories[offset:offset + limit]
         
+        # 预加载所有关系和实体，构建 memory_id -> relations 映射
+        all_relations = crud.list_relations(limit=10000)
+        all_entities = crud.list_entities(limit=10000)
+        # 构建 slug -> name 映射
+        slug_to_name = {e.slug: e.name for e in all_entities}
+        
+        memory_relations_map = {}
+        for rel in all_relations:
+            if rel.source_memory_id:
+                if rel.source_memory_id not in memory_relations_map:
+                    memory_relations_map[rel.source_memory_id] = []
+                # 转换为友好名称
+                src_name = slug_to_name.get(rel.source_slug, rel.source_slug)
+                tgt_name = slug_to_name.get(rel.target_slug, rel.target_slug)
+                memory_relations_map[rel.source_memory_id].append(
+                    f"{src_name}|{rel.relation_type}|{tgt_name}"
+                )
+        
         facts = []
         for m in paginated_memories:
             eff_conf = effective_confidence(m)
+            # 从预加载的映射中获取关系，而不是用空的 m.relations
+            fact_relations = memory_relations_map.get(m.id, m.relations)
             facts.append({
                 "id": m.id,
                 "content": m.content,
                 "timestamp": m.created_at,
                 "entities": m.entities,
-                "relations": m.relations,
+                "relations": fact_relations,
                 "confidence": m.confidence,
                 "effective_confidence": round(eff_conf, 4),
                 "importance": m.importance,
@@ -226,12 +223,6 @@ def add_fact():
         tags = data.get('tags', [])  # 标签
         entity_type = data.get('entity_type', '')  # 用户指定的实体类型
         confidence = data.get('confidence', 0.9)
-        auto_extract = data.get('auto_extract', True)  # 是否自动提取实体
-        use_llm_ner = data.get('use_llm_ner', False)  # 是否使用大模型 NER（异步）
-
-        # 如果没有指定实体，自动提取
-        if not entities and auto_extract:
-            entities = _extract_entities_from_content(content)
 
         crud = get_crud_instance()
 
@@ -346,18 +337,11 @@ def add_fact():
             relations=parsed_relations,
             importance=importance,
             confidence=confidence,
+            tags=tags,
             auto_embed=True,
             skip_relations=True  # 关系由后面统一创建，使用正确的 slug
         )
         
-        # 如果启用大模型 NER，加入队列（异步处理）
-        if use_llm_ner:
-            try:
-                enqueue_ner(crud, memory.id, content)
-                logger.info(f"已将 memory {memory.id} 加入 NER 队列")
-            except Exception as e:
-                logger.warning(f"加入 NER 队列失败: {e}")
-
         # 创建/关联实体（使用已解析的 entity_names 和 entity_type_map）
         # 返回 name -> slug 映射，用于后续创建关系
         name_to_slug = {}
@@ -455,23 +439,6 @@ def add_fact():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-def _extract_entities_from_content(content: str) -> list:
-    """
-    从内容中提取实体
-    
-    使用 jieba 分词 + 词性标注 + 自定义规则提取实体。
-    详见 memory_bank/ner_extractor.py
-    """
-    try:
-        entities = ner_extract_entities(content)
-        # 最多返回 15 个，按优先级排序
-        return entities[:15]
-    except Exception as e:
-        logger.error(f"实体提取失败: {e}")
-        # 降级：返回空列表
-        return []
-
-
 @app.route('/api/facts/<fact_id>', methods=['DELETE'])
 def remove_fact(fact_id):
     """删除事实"""
@@ -509,13 +476,27 @@ def get_fact_detail(fact_id):
         if not memory:
             return jsonify({"success": False, "error": "记忆不存在"}), 404
         
+        # 从关系表查询该记忆关联的关系
+        all_relations = crud.list_relations(limit=10000)
+        all_entities = crud.list_entities(limit=10000)
+        # 构建 slug -> name 映射
+        slug_to_name = {e.slug: e.name for e in all_entities}
+        
+        fact_relations = []
+        for rel in all_relations:
+            if rel.source_memory_id == fact_id:
+                # 转换为友好名称
+                src_name = slug_to_name.get(rel.source_slug, rel.source_slug)
+                tgt_name = slug_to_name.get(rel.target_slug, rel.target_slug)
+                fact_relations.append(f"{src_name}|{rel.relation_type}|{tgt_name}")
+        
         return jsonify({
             "success": True,
             "data": {
                 "id": memory.id,
                 "content": memory.content,
                 "entities": memory.entities,
-                "relations": memory.relations,
+                "relations": fact_relations,
                 "confidence": memory.confidence,
                 "importance": memory.importance,
                 "tags": memory.tags,
@@ -801,146 +782,12 @@ def get_relations():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-# ==================== NER API ====================
-
-@app.route('/api/ner/status', methods=['GET'])
-def get_ner_status():
-    """获取 NER 队列状态"""
-    try:
-        crud = get_crud_instance()
-        stats = get_queue_stats(crud)
-        
-        return jsonify({
-            "success": True,
-            "data": stats
-        })
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-@app.route('/api/ner/batch', methods=['POST'])
-def trigger_ner_batch():
-    """
-    触发 NER 批处理
-    
-    请求体：
-    {
-      "mode": "all" | "pending" | "date_range",
-      "date_from": "2026-03-01",  # 可选
-      "date_to": "2026-03-05"     # 可选
-    }
-    """
-    try:
-        data = request.get_json() or {}
-        mode = data.get('mode', 'pending')
-        date_from = data.get('date_from')
-        date_to = data.get('date_to')
-        
-        crud = get_crud_instance()
-        
-        # 获取要处理的记忆
-        items = []
-        all_memories = crud.list_memories(limit=10000)
-        
-        if mode == 'all':
-            items = [{'fact_id': m.id, 'content': m.content} for m in all_memories]
-        elif mode == 'date_range':
-            if not date_from or not date_to:
-                return jsonify({
-                    "success": False,
-                    "error": "date_range 模式需要 date_from 和 date_to 参数"
-                }), 400
-            
-            start = datetime.fromisoformat(date_from)
-            end = datetime.fromisoformat(date_to)
-            
-            for m in all_memories:
-                try:
-                    mem_time = datetime.fromisoformat(m.created_at)
-                    if start <= mem_time <= end:
-                        items.append({'fact_id': m.id, 'content': m.content})
-                except (ValueError, TypeError) as e:
-                    logger.debug(f"Invalid timestamp format for memory {m.id}: {e}")
-        else:  # pending
-            # 只处理未关联实体的记忆
-            for m in all_memories:
-                if not m.entities:
-                    items.append({'fact_id': m.id, 'content': m.content})
-        
-        # 加入队列
-        queued_count = enqueue_batch(crud, items)
-        
-        return jsonify({
-            "success": True,
-            "data": {
-                "total_facts": len(items),
-                "queued": queued_count,
-                "message": f"已将 {queued_count} 条记忆加入 NER 队列，后台处理中"
-            }
-        })
-    except Exception as e:
-        logger.error(f"NER 批处理失败: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-@app.route('/api/ner/start', methods=['POST'])
-def start_ner_worker():
-    """启动 NER 后台处理器"""
-    try:
-        worker = get_ner_worker()
-        worker.start()
-        
-        return jsonify({
-            "success": True,
-            "data": {
-                "message": "NER Worker 已启动"
-            }
-        })
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-@app.route('/api/ner/stop', methods=['POST'])
-def stop_ner_worker():
-    """停止 NER 后台处理器"""
-    try:
-        worker = get_ner_worker()
-        worker.stop()
-        
-        return jsonify({
-            "success": True,
-            "data": {
-                "message": "NER Worker 已停止"
-            }
-        })
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
 # ==================== 知识图谱 API ====================
 
 @app.route('/graph')
 def graph_page():
     """知识图谱可视化页面"""
     return render_template('graph.html')
-
-
-@app.route('/test-slider')
-def test_slider_page():
-    """滑块测试页面"""
-    return render_template('test-slider.html')
-
-
-@app.route('/test-diagnose')
-def test_diagnose_page():
-    """引擎诊断测试页面"""
-    return render_template('test-diagnose.html')
-
-
-@app.route('/graph-enhanced')
-def graph_enhanced_page():
-    """知识图谱可视化页面（增强版）"""
-    return render_template('graph-enhanced.html')
 
 
 @app.route('/api/graph', methods=['GET'])
@@ -1008,28 +855,29 @@ def get_graph_data():
         # 先计算最大 memoryCount（用于归一化 importance）
         entity_memory_counts = {}
         for entity in entities:
-            slug_lower = entity.slug.lower()
-            if slug_lower not in seen_slugs:
+            # 🔒 使用精确 slug（不再使用 .lower()，防止大小写冲突）
+            if entity.slug not in seen_slugs:
                 memories = crud.get_entity_memories(entity.slug)
-                entity_memory_counts[slug_lower] = len(memories)
+                entity_memory_counts[entity.slug] = len(memories)
         
         max_memory_count = max(entity_memory_counts.values()) if entity_memory_counts else 1
         
         seen_slugs.clear()
         
         for entity in entities:
-            slug_lower = entity.slug.lower()
+            # 🔒 使用精确 slug（不再使用 .lower()，防止大小写冲突）
+            slug_exact = entity.slug
             
             # 去重：如果已经处理过这个 slug，跳过
-            if slug_lower in seen_slugs:
+            if slug_exact in seen_slugs:
                 continue
-            seen_slugs.add(slug_lower)
+            seen_slugs.add(slug_exact)
             
             node_id = len(nodes) + 1
-            entity_slug_to_id[slug_lower] = node_id
+            entity_slug_to_id[slug_exact] = node_id
             
             # 获取关联记忆数量
-            memory_count = entity_memory_counts.get(slug_lower, 0)
+            memory_count = entity_memory_counts.get(slug_exact, 0)
             
             # 计算重要性（基于 memoryCount 归一化到 0-1）
             importance = min(1.0, memory_count / max_memory_count) if max_memory_count > 0 else 0.5
@@ -1056,8 +904,9 @@ def get_graph_data():
         entity_pair_relations = {}
 
         for relation in relations:
-            source_id = entity_slug_to_id.get(relation.source_slug.lower())
-            target_id = entity_slug_to_id.get(relation.target_slug.lower())
+            # 🔒 使用精确 slug（不再使用 .lower()，防止大小写冲突）
+            source_id = entity_slug_to_id.get(relation.source_slug)
+            target_id = entity_slug_to_id.get(relation.target_slug)
 
             # 只添加两端实体都存在的边
             if source_id and target_id:
